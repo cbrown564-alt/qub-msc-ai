@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analysing the Linguistic Structure of LLMs — Case Study</title>
+<meta name="description" content="602 GPT-5-mini stories across six styles reveal a measurably bent Zipf's law, a 16x swing in dependency distance, and a stylometric fingerprint a two-feature classifier recovers 76% of the time.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --blue: #2f5f7d;
+    --err: #9c3b26;
+    --err-soft: rgba(156,59,38,0.13);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  a{ color: var(--amber); text-decoration-color: rgba(156,97,30,0.4); text-underline-offset: 3px; }
+  a:hover{ text-decoration-color: var(--amber); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow a{ color: var(--muted); }
+
+  /* section 1: findings */
+  .findings{
+    position: relative;
+    padding: 4.2rem 1.5rem 3.5rem;
+    background-image: radial-gradient(circle at 1px 1px, rgba(20,22,25,0.07) 1px, transparent 0);
+    background-size: 26px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1{
+    font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+    line-height: 1.14;
+    font-weight: 400;
+    margin: 0 0 1.3rem;
+    max-width: 19ch;
+  }
+  h1 em{ font-style: italic; color: var(--amber); }
+
+  .thesis{
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--ink-dim);
+    max-width: 60ch;
+    margin: 0 0 2.4rem;
+  }
+  .thesis strong{ color: var(--ink); font-weight: 600; }
+
+  .stat-rail{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2.6rem;
+  }
+  .stat{ background: var(--panel); padding: 1.2rem 1.3rem; }
+  .stat .num{
+    font-family: var(--font-mono);
+    font-size: clamp(1.4rem, 2.8vw, 1.9rem);
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat .lbl{ font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .stat .lbl b{ color: var(--ink-dim); font-weight: 600; }
+
+  /* illustration components (one per section) */
+  .illustration{ margin: 0 auto 2.4rem; }
+  .cm-scroll{ overflow-x: auto; padding-bottom: 2px; }
+  table.cm{
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    margin: 0 auto;
+    background: var(--panel);
+  }
+  table.cm th, table.cm td{
+    width: 40px; height: 32px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  table.cm th{ font-weight: 400; color: var(--muted); font-size: 0.66rem; }
+  table.cm th.corner{ border: none; }
+  table.cm th.rowhead{ text-align: right; padding-right: 0.6rem; white-space: nowrap; border: none; }
+  table.cm td.diag{ background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  table.cm td.err{ background: var(--err-soft); color: var(--err); font-weight: 600; }
+  table.cm td.zero{ color: rgba(23,25,29,0.16); }
+
+  .caption{
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.9rem 0 0;
+  }
+
+  .findings-list{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin-top: 0.6rem;
+  }
+  .findings-list div h4{
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+  }
+  .findings-list div p{ font-size: 0.94rem; margin: 0; color: var(--ink-dim); }
+
+  /* sections 2 & 3 */
+  section.body{ padding: 3.6rem 1.5rem; }
+  section.body + section.body{ border-top: 1px solid var(--line); }
+  section.body h2{
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    font-weight: 500;
+    margin: 0 0 0.4rem;
+  }
+  section.body h3{
+    font-family: var(--font-serif);
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 1.2rem;
+  }
+  section.body p{ color: var(--ink-dim); max-width: 66ch; }
+  section.body p.lead{ color: var(--ink); font-size: 1.04rem; max-width: 64ch; }
+  section.body p.close{ font-size: 0.94rem; max-width: 66ch; margin-top: 2rem; }
+  code{ font-family: var(--font-mono); color: var(--ink); background: var(--amber-soft); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+
+  .iter-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .iter-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .iter-labels{ display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .bar-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .bar-row{ display: grid; grid-template-columns: 84px 1fr 46px; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+  .bar-row .name{ color: var(--muted); text-align: right; }
+  .bar-track{ background: var(--line); border-radius: 3px; height: 9px; overflow: hidden; }
+  .bar-fill{ height: 100%; background: var(--amber); border-radius: 3px; }
+  .bar-row .count{ color: var(--ink-dim); }
+
+  /* zipf log-log chart (custom) */
+  .zipf-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .zipf-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .zipf-legend{ display: flex; justify-content: center; gap: 1.6rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); margin-top: 0.7rem; }
+  .zipf-legend span{ display: inline-flex; align-items: center; gap: 0.4rem; }
+  .zipf-legend .sw{ width: 14px; height: 2px; display: inline-block; }
+
+  footer{
+    padding: 2.8rem 1.5rem 3.6rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem;
+    align-items: center; justify-content: space-between;
+  }
+  .cta{
+    font-family: var(--font-mono); font-size: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.7rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta:hover{ border-color: var(--amber); color: var(--amber); }
+  .fine{ font-size: 0.8rem; color: var(--muted); max-width: 46ch; }
+
+  @media (max-width: 760px){
+    .findings-list{ grid-template-columns: 1fr; gap: 1.4rem; }
+    .stat-rail{ grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<section class="findings">
+  <div class="wrap">
+    <p class="eyebrow"><a href="../../../README.md">MSc AI, Queen's University Belfast</a> · ECS8054 Natural Language Processing · Coursework 1 of 2</p>
+    <h1>One model, six styles, and a grammar that <em>bends by the numbers</em></h1>
+    <p class="thesis">602 short stories, generated by GPT&#8209;5&#8209;mini from a single structured template that only varies theme, setting, country and requested style, turn out to differ from each other in ways that are measurable, not just readable. Word-frequency decay, sentence-dependency structure and lexical fingerprints all shift systematically with the style prompt &mdash; enough that a two-feature classifier recovers the intended style <strong>76% of the time</strong>.</p>
+
+    <div class="stat-rail">
+      <div class="stat">
+        <span class="num">&minus;1.01 &rarr; &minus;1.42</span>
+        <span class="lbl">log&ndash;log Zipf slope range across <b>6 styles</b> &mdash; the canonical &minus;1 exponent is rejected in every one (95% CI, p&lt;0.001)</span>
+      </div>
+      <div class="stat">
+        <span class="num">16&times;</span>
+        <span class="lbl">gap in mean max dependency distance: <b>47.4 tokens</b> (stream&#8209;of&#8209;consciousness) vs. <b>2.9</b> (hard&#8209;boiled)</span>
+      </div>
+      <div class="stat">
+        <span class="num">76%</span>
+        <span class="lbl">style-classification accuracy from just <b>2 structural features</b>, vs. &asymp;17% chance across 6 styles</span>
+      </div>
+    </div>
+
+    <div class="illustration zipf-chart">
+      <svg viewBox="0 0 520 190" preserveAspectRatio="xMinYMid meet">
+        <line x1="40" y1="14" x2="40" y2="170" stroke="rgba(20,22,25,0.16)" stroke-width="1"/>
+        <line x1="40" y1="170" x2="500" y2="170" stroke="rgba(20,22,25,0.16)" stroke-width="1"/>
+
+        <!-- canonical zipf reference, slope -1 -->
+        <line x1="40" y1="16.8" x2="500" y2="118.9" stroke="rgba(20,22,25,0.35)" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+        <!-- legalistic, slope -1.01, nearly overlaps canonical -->
+        <polyline points="40,16.8 500,119.7" fill="none" stroke="#2f5f7d" stroke-width="2.5" stroke-linecap="round"/>
+
+        <!-- children's, slope -1.42, steepest decay -->
+        <polyline points="40,16.8 500,162.0" fill="none" stroke="#9c611e" stroke-width="2.5" stroke-linecap="round"/>
+
+        <circle cx="40" cy="16.8" r="3.5" fill="#43464d"/>
+
+        <text x="40" y="184" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">rank 1</text>
+        <text x="500" y="184" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="end">rank 1,000</text>
+        <text x="34" y="20" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="end">high</text>
+        <text x="34" y="168" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="end">low</text>
+      </svg>
+      <div class="zipf-legend">
+        <span><i class="sw" style="background:#43464d; opacity:0.6;"></i>canonical Zipf (&minus;1)</span>
+        <span><i class="sw" style="background:#2f5f7d;"></i>legalistic (&minus;1.01)</span>
+        <span><i class="sw" style="background:#9c611e;"></i>for children (&minus;1.42)</span>
+      </div>
+      <p class="caption">fitted log&ndash;log rank&ndash;frequency slope per style &middot; legalistic tracks canonical Zipf almost exactly; children's stories decay far faster</p>
+    </div>
+
+    <div class="findings-list">
+      <div>
+        <h4>01 &middot; Zipf's law, bent on purpose</h4>
+        <p>Every style's rank&ndash;frequency curve follows a power law (R&sup2; 0.91&ndash;0.95), but none matches the canonical &minus;1 exponent &mdash; no 95% CI includes it. Legalistic prose sits closest (&minus;1.01); children's stories decay fastest (&minus;1.42), consistent with a far more constrained vocabulary.</p>
+      </div>
+      <div>
+        <h4>02 &middot; Syntax stretches and contracts with style</h4>
+        <p>Maximum dependency distance &mdash; how far a word sits from its grammatical head &mdash; varies enormously by style (Kruskal&ndash;Wallis H&nbsp;=&nbsp;10228, p&lt;0.001). Stream-of-consciousness prose averages a 47.4-token longest span per sentence (one hits 222 tokens), sixteen times hard-boiled's 2.9.</p>
+      </div>
+      <div>
+        <h4>03 &middot; The fingerprint is real, not cosmetic</h4>
+        <p>A logistic regression using only two features &mdash; sentence length and pronoun frequency per 100k words &mdash; recovers the correct style 76% of the time (macro F1 0.75) against a &asymp;17% chance baseline, with journalistic and legalistic almost perfectly separated (F1 &gt; 0.88).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Methods</h2>
+    <h3>Two parsers, one statistical test, and a classifier as a sanity check</h3>
+    <p class="lead">spaCy's <code>en_core_web_sm</code> dependency parser was chosen over the larger transformer pipeline after benchmarking found the latter five times slower with no measurable gain in accuracy on this corpus. Maximum dependency distance per sentence &mdash; <code>abs(token.i - token.head.i)</code> &mdash; was used as a proxy for syntactic complexity, and a Kruskal&ndash;Wallis test (chosen because the metric is heavy-tailed and non-normal) confirmed the six styles differ significantly.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">stream of consc.</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">47.4</span></div>
+      <div class="bar-row"><span class="name">legalistic</span><div class="bar-track"><div class="bar-fill" style="width:76.8%"></div></div><span class="count">36.4</span></div>
+      <div class="bar-row"><span class="name">descriptive</span><div class="bar-track"><div class="bar-fill" style="width:73.4%"></div></div><span class="count">34.8</span></div>
+      <div class="bar-row"><span class="name">journalistic</span><div class="bar-track"><div class="bar-fill" style="width:15.8%"></div></div><span class="count">7.5</span></div>
+      <div class="bar-row"><span class="name">for children</span><div class="bar-track"><div class="bar-fill" style="width:7.2%"></div></div><span class="count">3.4</span></div>
+      <div class="bar-row"><span class="name">hard-boiled</span><div class="bar-track"><div class="bar-fill" style="width:6.1%"></div></div><span class="count">2.9</span></div>
+      <p class="caption">mean max dependency distance in tokens, per style &middot; Kruskal&ndash;Wallis H&nbsp;=&nbsp;10228.06, p&lt;0.001</p>
+    </div>
+
+    <p class="close">As a further check that these were genuine stylistic signals rather than noise, a logistic regression on two independent features (sentence length, pronoun density) separated the six styles at 76% accuracy (macro F1 0.75) &mdash; journalistic and legalistic were recovered almost perfectly (F1 &gt; 0.88), while descriptive and stream-of-consciousness overlapped more (F1 &asymp; 0.46&ndash;0.48), consistent with their similarly long, discursive sentences. The main methodological caveat sits with sentence-boundary detection: stream-of-consciousness prose has very few full stops, so a custom paragraph-boundary rule was written to stop entire stories being parsed as one sentence, but the longest dependency span found (222 tokens) is still sensitive to exactly where that rule draws the line. Zipf regressions were also fit on lemmas rather than raw word forms &mdash; a standard transformation, but not the only defensible one, and it will shift the fitted slopes somewhat versus a token-based fit.</p>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Data</h2>
+    <h3>602 GPT-5-mini stories, six styles, one template</h3>
+    <p class="lead">Each story came from the same structured prompt template &mdash; a theme, setting, country and character role were randomised per story, while the style instruction (e.g. <code>legalistic</code>, <code>stream of consciousness</code>) was fixed within each group &mdash; producing 602 short stories of 471&ndash;790 words each, with every style represented by at least 85 stories.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">for children</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">125</span></div>
+      <div class="bar-row"><span class="name">descriptive</span><div class="bar-track"><div class="bar-fill" style="width:82.4%"></div></div><span class="count">103</span></div>
+      <div class="bar-row"><span class="name">legalistic</span><div class="bar-track"><div class="bar-fill" style="width:80.8%"></div></div><span class="count">101</span></div>
+      <div class="bar-row"><span class="name">hard-boiled</span><div class="bar-track"><div class="bar-fill" style="width:76.8%"></div></div><span class="count">96</span></div>
+      <div class="bar-row"><span class="name">journalistic</span><div class="bar-track"><div class="bar-fill" style="width:73.6%"></div></div><span class="count">92</span></div>
+      <div class="bar-row"><span class="name">stream of consc.</span><div class="bar-track"><div class="bar-fill" style="width:68.0%"></div></div><span class="count">85</span></div>
+      <p class="caption">stories per style, n=602 &middot; children's stories are most common, but every style has 85+ stories</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    <a class="cta" href="https://github.com/cbrown564-alt/qub-msc-ai/blob/main/semester-2/natural-language-processing/cw1-llm-linguistic-structure/conor_brown_40466218_a1.ipynb">Open the full notebook &rarr;</a>
+  </div>
+  <span class="fine">Full log&ndash;log small multiples for all six styles, raincloud plots for dependency distance and lexical density, and the dependency-parse render of the longest sentence are in the notebook. Part 2 reuses this corpus for country classification, sentiment/emotion analysis, and LLM-based Q&amp;A &mdash; <a href="../cw2-classification-sentiment-q+a-LLMs/case-study.html">see it here</a>.</span>
+</footer>
+
+</body>
+</html>
