@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TinyImageNet Classification with Hand-Crafted Features — Case Study</title>
+<meta name="description" content="SIFT, pushed hard on 64×64 crops and encoded with Fisher Vectors, reaches 52.9% across 15 TinyImageNet classes — 7.9× chance — with honest failure analysis on where hand-crafted features break down.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --blue: #2f5f7d;
+    --err: #9c3b26;
+    --err-soft: rgba(156,59,38,0.13);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  a{ color: var(--amber); text-decoration-color: rgba(156,97,30,0.4); text-underline-offset: 3px; }
+  a:hover{ text-decoration-color: var(--amber); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow a{ color: var(--muted); }
+
+  /* section 1: findings */
+  .findings{
+    position: relative;
+    padding: 4.2rem 1.5rem 3.5rem;
+    background-image: radial-gradient(circle at 1px 1px, rgba(20,22,25,0.07) 1px, transparent 0);
+    background-size: 26px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1{
+    font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+    line-height: 1.14;
+    font-weight: 400;
+    margin: 0 0 1.3rem;
+    max-width: 19ch;
+  }
+  h1 em{ font-style: italic; color: var(--amber); }
+
+  .thesis{
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--ink-dim);
+    max-width: 60ch;
+    margin: 0 0 2.4rem;
+  }
+  .thesis strong{ color: var(--ink); font-weight: 600; }
+
+  .stat-rail{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2.6rem;
+  }
+  .stat{ background: var(--panel); padding: 1.2rem 1.3rem; }
+  .stat .num{
+    font-family: var(--font-mono);
+    font-size: clamp(1.4rem, 2.8vw, 1.9rem);
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat .lbl{ font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .stat .lbl b{ color: var(--ink-dim); font-weight: 600; }
+
+  /* illustration components (one per section) */
+  .illustration{ margin: 0 auto 2.4rem; }
+  .cm-scroll{ overflow-x: auto; padding-bottom: 2px; }
+  table.cm{
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    margin: 0 auto;
+    background: var(--panel);
+  }
+  table.cm th, table.cm td{
+    width: 40px; height: 32px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  table.cm th{ font-weight: 400; color: var(--muted); font-size: 0.66rem; }
+  table.cm th.corner{ border: none; }
+  table.cm th.rowhead{ text-align: right; padding-right: 0.6rem; white-space: nowrap; border: none; }
+  table.cm td.diag{ background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  table.cm td.err{ background: var(--err-soft); color: var(--err); font-weight: 600; }
+  table.cm td.zero{ color: rgba(23,25,29,0.16); }
+
+  .caption{
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.9rem 0 0;
+  }
+
+  .findings-list{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin-top: 0.6rem;
+  }
+  .findings-list div h4{
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+  }
+  .findings-list div p{ font-size: 0.94rem; margin: 0; color: var(--ink-dim); }
+
+  /* sections 2 & 3 */
+  section.body{ padding: 3.6rem 1.5rem; }
+  section.body + section.body{ border-top: 1px solid var(--line); }
+  section.body h2{
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    font-weight: 500;
+    margin: 0 0 0.4rem;
+  }
+  section.body h3{
+    font-family: var(--font-serif);
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 1.2rem;
+  }
+  section.body p{ color: var(--ink-dim); max-width: 66ch; }
+  section.body p.lead{ color: var(--ink); font-size: 1.04rem; max-width: 64ch; }
+  section.body p.close{ font-size: 0.94rem; max-width: 66ch; margin-top: 2rem; }
+  code{ font-family: var(--font-mono); color: var(--ink); background: var(--amber-soft); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+
+  .iter-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .iter-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .iter-labels{ display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .bar-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .bar-row{ display: grid; grid-template-columns: 84px 1fr 46px; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+  .bar-row .name{ color: var(--muted); text-align: right; }
+  .bar-track{ background: var(--line); border-radius: 3px; height: 9px; overflow: hidden; }
+  .bar-fill{ height: 100%; background: var(--amber); border-radius: 3px; }
+  .bar-row .count{ color: var(--ink-dim); }
+
+  footer{
+    padding: 2.8rem 1.5rem 3.6rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem;
+    align-items: center; justify-content: space-between;
+  }
+  .cta{
+    font-family: var(--font-mono); font-size: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.7rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta:hover{ border-color: var(--amber); color: var(--amber); }
+  .fine{ font-size: 0.8rem; color: var(--muted); max-width: 46ch; }
+
+  @media (max-width: 760px){
+    .findings-list{ grid-template-columns: 1fr; gap: 1.4rem; }
+    .stat-rail{ grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+
+  /* supplementary: wider name column for longer chart labels */
+  .bar-chart.labels-wide .bar-row{ grid-template-columns: 120px 1fr 42px; }
+  .bar-fill.blue{ background: var(--blue); }
+</style>
+</head>
+<body>
+
+<section class="findings">
+  <div class="wrap">
+    <p class="eyebrow"><a href="../../../README.md">MSc AI, Queen's University Belfast</a> · ECS8053 Computer Vision · Coursework 1 of 2</p>
+    <h1>No deep learning allowed: <em>52.9%</em> across 15 classes from SIFT alone</h1>
+    <p class="thesis">Local feature detectors were built for 500×500 photographs, not 64×64 crops. Pushing SIFT's parameters hard enough to compensate — then encoding what it finds with Fisher Vectors instead of Bag-of-Words — turned a barely-better-than-chance pipeline into a linear SVM that gets <strong>almost eight times better than random guessing</strong>, with clear, explicable failure modes left over.</p>
+
+    <div class="stat-rail">
+      <div class="stat">
+        <span class="num">52.9%</span>
+        <span class="lbl">test accuracy &mdash; <b>SIFT + Fisher Vectors + Linear SVM</b> (C=1e-5), best of six pipelines tried</span>
+      </div>
+      <div class="stat">
+        <span class="num">7.9&times;</span>
+        <span class="lbl">chance level for a <b>15-class</b> problem (1/15 &asymp; 6.7%)</span>
+      </div>
+      <div class="stat">
+        <span class="num">18%</span>
+        <span class="lbl">accuracy on the worst class, <b>plunger</b> &mdash; the model's clearest blind spot</span>
+      </div>
+    </div>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">cauliflower</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">81%</span></div>
+      <div class="bar-row"><span class="name">seashore</span><div class="bar-track"><div class="bar-fill" style="width:87.7%"></div></div><span class="count">71%</span></div>
+      <div class="bar-row"><span class="name">thatched roof</span><div class="bar-track"><div class="bar-fill" style="width:81.5%"></div></div><span class="count">66%</span></div>
+      <div class="bar-row"><span class="name">pill bottle</span><div class="bar-track"><div class="bar-fill" style="width:79.0%"></div></div><span class="count">64%</span></div>
+      <div class="bar-row"><span class="name">bell pepper</span><div class="bar-track"><div class="bar-fill" style="width:77.8%"></div></div><span class="count">63%</span></div>
+      <div class="bar-row"><span class="name">rocking chair</span><div class="bar-track"><div class="bar-fill" style="width:74.1%"></div></div><span class="count">60%</span></div>
+      <div class="bar-row"><span class="name">plate</span><div class="bar-track"><div class="bar-fill" style="width:71.6%"></div></div><span class="count">58%</span></div>
+      <div class="bar-row"><span class="name">viaduct</span><div class="bar-track"><div class="bar-fill" style="width:71.6%"></div></div><span class="count">58%</span></div>
+      <div class="bar-row"><span class="name">alp</span><div class="bar-track"><div class="bar-fill" style="width:64.2%"></div></div><span class="count">52%</span></div>
+      <div class="bar-row"><span class="name">fountain</span><div class="bar-track"><div class="bar-fill" style="width:54.3%"></div></div><span class="count">44%</span></div>
+      <div class="bar-row"><span class="name">parking meter</span><div class="bar-track"><div class="bar-fill" style="width:51.9%"></div></div><span class="count">42%</span></div>
+      <div class="bar-row"><span class="name">sunglasses</span><div class="bar-track"><div class="bar-fill" style="width:50.6%"></div></div><span class="count">41%</span></div>
+      <div class="bar-row"><span class="name">acorn</span><div class="bar-track"><div class="bar-fill" style="width:50.6%"></div></div><span class="count">41%</span></div>
+      <div class="bar-row"><span class="name">miniskirt</span><div class="bar-track"><div class="bar-fill" style="width:43.2%"></div></div><span class="count">35%</span></div>
+      <div class="bar-row"><span class="name">plunger</span><div class="bar-track"><div class="bar-fill" style="width:22.2%"></div></div><span class="count">18%</span></div>
+      <p class="caption">per-class test accuracy &middot; SIFT + Fisher Vectors + Linear SVM &middot; 100 test images per class, n=1,500</p>
+    </div>
+
+    <div class="findings-list">
+      <div>
+        <h4>01 &middot; Parameter tuning outworked everything else</h4>
+        <p>Loosening SIFT's keypoint gates &mdash; more octave layers, a near-zero contrast threshold, less smoothing &mdash; took mean detected features per image from 36 to 920. Holding Fisher Vector encoding fixed, that alone lifted accuracy from 35.1% to 52.9%.</p>
+      </div>
+      <div>
+        <h4>02 &middot; Encoding mattered almost as much as features</h4>
+        <p>Swapping Bag-of-Words for Fisher Vectors added 9&ndash;13pt at every feature-extractor setting tried: +10.6pt for baseline SIFT, +12.3pt for the tuned version.</p>
+      </div>
+      <div>
+        <h4>03 &middot; Errors cluster on background, not object</h4>
+        <p>The three worst confusions &mdash; alp&rarr;seashore, acorn&rarr;bell pepper, plate&rarr;cauliflower &mdash; each account for 18 of 100 test images. The model's worst class, plunger, is right only 18% of the time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Methods</h2>
+    <h3>Six experiments, one clear winner: SIFT tuned hard, encoded with Fisher Vectors</h3>
+    <p class="lead">SIFT was the obvious starting point over ORB: at default settings, ORB finds no keypoints at all in 4,835 of 6,000 training images, while SIFT finds at least one in all but 8. But SIFT itself was designed for 500&times;500 photographs, not 64&times;64 crops &mdash; at default parameters it surfaces a mean of just 36 features per image. Loosening every parameter that gates keypoint acceptance (more octave layers, a contrast threshold cut from 0.04 to 0.001, a wider edge threshold, less smoothing) pushed that to 920, at the cost of admitting real noise. Fisher Vectors, which encode first- and second-order deviations from a 128-component GMM rather than forcing a hard visual-word assignment, were chosen over Bag-of-Words to average that noise back out; a linear SVM with <code>C</code> grid-searched over four values via 3-fold CV closed the loop.</p>
+
+    <div class="illustration bar-chart labels-wide">
+      <div class="bar-row"><span class="name">ORB base + BoW</span><div class="bar-track"><div class="bar-fill blue" style="width:13.6%"></div></div><span class="count">7.2%</span></div>
+      <div class="bar-row"><span class="name">ORB + BoW</span><div class="bar-track"><div class="bar-fill blue" style="width:34.3%"></div></div><span class="count">18.1%</span></div>
+      <div class="bar-row"><span class="name">SIFT base + BoW</span><div class="bar-track"><div class="bar-fill blue" style="width:46.3%"></div></div><span class="count">24.5%</span></div>
+      <div class="bar-row"><span class="name">SIFT base + FV</span><div class="bar-track"><div class="bar-fill blue" style="width:66.4%"></div></div><span class="count">35.1%</span></div>
+      <div class="bar-row"><span class="name">SIFT + BoW</span><div class="bar-track"><div class="bar-fill blue" style="width:76.7%"></div></div><span class="count">40.6%</span></div>
+      <div class="bar-row"><span class="name">SIFT + FV</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">52.9%</span></div>
+      <p class="caption">test accuracy by pipeline &middot; "base" = default detector parameters &middot; amber = final chosen pipeline</p>
+    </div>
+
+    <p class="close">Grid search picked <code>C=1e-5</code> by 3-fold cross-validated accuracy for every configuration; the confusion matrix (1,500 test images, 100 per class) shows the errors aren't random &mdash; alp/seashore, acorn/bell-pepper/cauliflower, and plate/cauliflower are the three heaviest confusions, at 18 of 100 each, consistent with the model keying on shared background texture (foliage, sea-blue, dirt) rather than object shape. The obvious limitation: 52.9% is close to the historical ceiling for hand-crafted features on data like this, and the "optimisation" that got there is fundamentally a workaround &mdash; trading detection precision for raw feature volume and letting Fisher Vectors average out the resulting noise, not a genuinely more discriminative descriptor. The result also rests on one fixed 15-class draw and one random seed; a different sample of classes could easily reorder the weaker configurations.</p>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Data</h2>
+    <h3>64&times;64 crops, built for detectors designed at 500&times;500</h3>
+    <p class="lead">15 classes are sampled with a fixed seed from TinyImageNet100's full class list, then sorted alphabetically for reproducibility: 400 training and 100 test images each, 6,000 and 1,500 images total &mdash; a clean 80/20 split with no class imbalance to control for. The complication is resolution: every image is a 64&times;64 downsampled crop, a twelfth of the linear resolution these detectors were designed against, and it shows directly in how few local features either one can find.</p>
+
+    <div class="illustration bar-chart labels-wide">
+      <div class="bar-row"><span class="name">ORB, baseline</span><div class="bar-track"><div class="bar-fill blue" style="width:0.5%"></div></div><span class="count">0.2</span></div>
+      <div class="bar-row"><span class="name">ORB, tuned</span><div class="bar-track"><div class="bar-fill blue" style="width:11.1%"></div></div><span class="count">102</span></div>
+      <div class="bar-row"><span class="name">SIFT, baseline</span><div class="bar-track"><div class="bar-fill blue" style="width:3.9%"></div></div><span class="count">36</span></div>
+      <div class="bar-row"><span class="name">SIFT, tuned</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">920</span></div>
+      <p class="caption">mean keypoints detected per image, across 6,000 training images &middot; default vs. hand-tuned parameters</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    <a class="cta" href="https://github.com/cbrown564-alt/qub-msc-ai/blob/main/semester-2/computer-vision/cw1-tinyimagenet-classification/40466218_Conor_Brown_ECS8053.ipynb">Open the full notebook &rarr;</a>
+  </div>
+  <span class="fine">Keypoint overlays, feature-count histograms, and the full 15&times;15 confusion matrix are in the notebook. Part 2 revisits this exact task with MLPs and CNNs, benchmarked directly against this baseline &mdash; <a href="../cw2-neural-networks/case-study.html">see it here</a>.</span>
+</footer>
+
+</body>
+</html>
