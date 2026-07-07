@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Formalising the OREGANO Knowledge Graph — Case Study</title>
+<meta name="description" content="823,005 biomedical triples parsed into eleven entity types and seventeen first-order-logic predicates — then stress-tested against universal quantifiers to see which ones actually hold.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --blue: #2f5f7d;
+    --err: #9c3b26;
+    --err-soft: rgba(156,59,38,0.13);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  a{ color: var(--amber); text-decoration-color: rgba(156,97,30,0.4); text-underline-offset: 3px; }
+  a:hover{ text-decoration-color: var(--amber); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow a{ color: var(--muted); }
+
+  /* section 1: findings */
+  .findings{
+    position: relative;
+    padding: 4.2rem 1.5rem 3.5rem;
+    background-image: radial-gradient(circle at 1px 1px, rgba(20,22,25,0.07) 1px, transparent 0);
+    background-size: 26px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1{
+    font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+    line-height: 1.14;
+    font-weight: 400;
+    margin: 0 0 1.3rem;
+    max-width: 19ch;
+  }
+  h1 em{ font-style: italic; color: var(--amber); }
+
+  .thesis{
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--ink-dim);
+    max-width: 60ch;
+    margin: 0 0 2.4rem;
+  }
+  .thesis strong{ color: var(--ink); font-weight: 600; }
+
+  .stat-rail{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2.6rem;
+  }
+  .stat{ background: var(--panel); padding: 1.2rem 1.3rem; }
+  .stat .num{
+    font-family: var(--font-mono);
+    font-size: clamp(1.4rem, 2.8vw, 1.9rem);
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat .lbl{ font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .stat .lbl b{ color: var(--ink-dim); font-weight: 600; }
+
+  /* illustration components (one per section) */
+  .illustration{ margin: 0 auto 2.4rem; }
+  .cm-scroll{ overflow-x: auto; padding-bottom: 2px; }
+  table.cm{
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    margin: 0 auto;
+    background: var(--panel);
+  }
+  table.cm th, table.cm td{
+    width: 40px; height: 32px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  table.cm th{ font-weight: 400; color: var(--muted); font-size: 0.66rem; }
+  table.cm th.corner{ border: none; }
+  table.cm th.rowhead{ text-align: right; padding-right: 0.6rem; white-space: nowrap; border: none; }
+  table.cm td.diag{ background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  table.cm td.err{ background: var(--err-soft); color: var(--err); font-weight: 600; }
+  table.cm td.zero{ color: rgba(23,25,29,0.16); }
+
+  .caption{
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.9rem 0 0;
+  }
+
+  .findings-list{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin-top: 0.6rem;
+  }
+  .findings-list div h4{
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+  }
+  .findings-list div p{ font-size: 0.94rem; margin: 0; color: var(--ink-dim); }
+
+  /* sections 2 & 3 */
+  section.body{ padding: 3.6rem 1.5rem; }
+  section.body + section.body{ border-top: 1px solid var(--line); }
+  section.body h2{
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    font-weight: 500;
+    margin: 0 0 0.4rem;
+  }
+  section.body h3{
+    font-family: var(--font-serif);
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 1.2rem;
+  }
+  section.body p{ color: var(--ink-dim); max-width: 66ch; }
+  section.body p.lead{ color: var(--ink); font-size: 1.04rem; max-width: 64ch; }
+  section.body p.close{ font-size: 0.94rem; max-width: 66ch; margin-top: 2rem; }
+  code{ font-family: var(--font-mono); color: var(--ink); background: var(--amber-soft); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+
+  .iter-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .iter-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .iter-labels{ display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .bar-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .bar-row{ display: grid; grid-template-columns: 84px 1fr 46px; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+  .bar-row .name{ color: var(--muted); text-align: right; }
+  .bar-track{ background: var(--line); border-radius: 3px; height: 9px; overflow: hidden; }
+  .bar-fill{ height: 100%; background: var(--amber); border-radius: 3px; }
+  .bar-row .count{ color: var(--ink-dim); }
+
+  footer{
+    padding: 2.8rem 1.5rem 3.6rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem;
+    align-items: center; justify-content: space-between;
+  }
+  .cta{
+    font-family: var(--font-mono); font-size: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.7rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta:hover{ border-color: var(--amber); color: var(--amber); }
+  .fine{ font-size: 0.8rem; color: var(--muted); max-width: 46ch; }
+
+  @media (max-width: 760px){
+    .findings-list{ grid-template-columns: 1fr; gap: 1.4rem; }
+    .stat-rail{ grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+
+  /* --- new components for this page: node/relation diagram + predicate ledger --- */
+  .bar-chart.rel .bar-row{ grid-template-columns: 128px 1fr 70px; }
+  .bar-chart.rel .count{ text-align: right; }
+
+  .node-svg{ margin: 1.8rem auto 0; max-width: 660px; }
+  .node-svg svg{ width: 100%; height: auto; overflow: visible; }
+  .node-svg .node-box{ fill: var(--panel); stroke: var(--line-strong); stroke-width: 1; }
+  .node-svg .node-box.primary{ stroke: var(--amber); stroke-width: 1.6; }
+  .node-svg .node-label{ font-family: var(--font-mono); font-size: 11px; fill: var(--ink); text-anchor: middle; }
+  .node-svg .node-label.primary{ fill: var(--amber); }
+  .node-svg .edge-line{ stroke: rgba(20,22,25,0.3); stroke-width: 1.3; fill: none; }
+  .node-svg .edge-label{ font-family: var(--font-mono); font-size: 9.5px; fill: var(--ink-dim); text-anchor: middle; }
+  .node-svg .edge-count{ font-family: var(--font-mono); font-size: 9px; fill: var(--muted); text-anchor: middle; }
+
+  table.ledger{
+    width: 100%; max-width: 580px; margin: 1.8rem auto 0;
+    border-collapse: collapse; font-family: var(--font-mono); font-size: 0.78rem;
+  }
+  table.ledger th{
+    text-align: left; font-weight: 500; color: var(--muted); font-size: 0.66rem;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 0 0.6rem 0.55rem; border-bottom: 1px solid var(--line-strong);
+  }
+  table.ledger td{ padding: 0.6rem 0.6rem; border-bottom: 1px solid var(--line); color: var(--ink-dim); }
+  table.ledger td.pred{ color: var(--ink); }
+  table.ledger td.cov{ text-align: right; font-variant-numeric: tabular-nums; }
+  table.ledger td.q{ text-align: center; width: 2.4rem; color: var(--muted); }
+  table.ledger tr.universal td.cov, table.ledger tr.universal td.q{ color: var(--amber); font-weight: 600; }
+  table.ledger th.cov, table.ledger th.q{ text-align: right; }
+  table.ledger th.q{ text-align: center; }
+</style>
+</head>
+<body>
+
+<section class="findings">
+  <div class="wrap">
+    <p class="eyebrow"><a href="../../../README.md">MSc AI, Queen's University Belfast</a> · ECS8052 Knowledge Engineering · Coursework 1 of 2</p>
+    <h1>823,005 biomedical facts, formalised into <em>seventeen predicates</em> &mdash; only two hold universally</h1>
+    <p class="thesis">The OREGANO biomedical knowledge graph packs 823,005 compound&ndash;protein&ndash;gene&ndash;disease&ndash;pathway triples into eleven entity types. Parsing its ontology into first&#8209;order logic and testing every predicate as a <strong>universally-quantified statement</strong> shows the graph is exhaustively documented in exactly two places &mdash; everywhere else, coverage is partial by construction.</p>
+
+    <div class="stat-rail">
+      <div class="stat">
+        <span class="num">823,005</span>
+        <span class="lbl">triples across <b>11</b> entity types and 17 core biomedical relations</span>
+      </div>
+      <div class="stat">
+        <span class="num">17</span>
+        <span class="lbl">ontology predicates formalised with <b>domain, range</b> and a quantifier</span>
+      </div>
+      <div class="stat">
+        <span class="num">2 of 17</span>
+        <span class="lbl">predicates hold as <b>universal (&forall;)</b> truths &mdash; the rest are existential only</span>
+      </div>
+    </div>
+
+    <div class="illustration node-svg">
+      <svg viewBox="0 0 800 195" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Core OREGANO entity types and their connecting relations">
+        <!-- main chain edges -->
+        <line class="edge-line" x1="128" y1="151" x2="228" y2="151"/>
+        <line class="edge-line" x1="346" y1="151" x2="446" y2="151"/>
+        <line class="edge-line" x1="564" y1="151" x2="664" y2="151"/>
+        <!-- branch edges -->
+        <line class="edge-line" x1="505" y1="130" x2="505" y2="62"/>
+        <line class="edge-line" x1="723" y1="130" x2="723" y2="62"/>
+
+        <!-- main chain edge labels (sit in the clear band above the row) -->
+        <text class="edge-label" x="178" y="100">has_target</text>
+        <text class="edge-count" x="178" y="112">202,539</text>
+        <text class="edge-label" x="396" y="100">gene_product_of</text>
+        <text class="edge-count" x="396" y="112">10,881</text>
+        <text class="edge-label" x="614" y="100">causes_condition</text>
+        <text class="edge-count" x="614" y="112">17,287</text>
+
+        <!-- branch edge labels, offset right of the vertical connector -->
+        <text class="edge-label" x="513" y="93" text-anchor="start">acts_within</text>
+        <text class="edge-count" x="513" y="105" text-anchor="start">44,865</text>
+        <text class="edge-label" x="731" y="93" text-anchor="start">has_phenotype</text>
+        <text class="edge-count" x="731" y="105" text-anchor="start">88,791</text>
+
+        <!-- main chain nodes -->
+        <rect class="node-box primary" x="10" y="130" width="118" height="42" rx="6"/>
+        <text class="node-label primary" x="69" y="155">COMPOUND</text>
+        <rect class="node-box primary" x="228" y="130" width="118" height="42" rx="6"/>
+        <text class="node-label primary" x="287" y="155">PROTEIN</text>
+        <rect class="node-box primary" x="446" y="130" width="118" height="42" rx="6"/>
+        <text class="node-label primary" x="505" y="155">GENE</text>
+        <rect class="node-box primary" x="664" y="130" width="118" height="42" rx="6"/>
+        <text class="node-label primary" x="723" y="155">DISEASE</text>
+
+        <!-- branch nodes -->
+        <rect class="node-box" x="446" y="20" width="118" height="42" rx="6"/>
+        <text class="node-label" x="505" y="45">PATHWAY</text>
+        <rect class="node-box" x="664" y="20" width="118" height="42" rx="6"/>
+        <text class="node-label" x="723" y="45">PHENOTYPE</text>
+      </svg>
+      <p class="caption">core entity types (amber = the metapath queried in Part 2) and their largest connecting relation, with link counts</p>
+    </div>
+
+    <div class="findings-list">
+      <div>
+        <h4>01 &middot; Skewed by design</h4>
+        <p>The largest relation, <code>decrease_efficacy</code>, is 215,222 links &mdash; over a quarter of the graph on its own. That's expected: OREGANO is assembled from drug-interaction and side-effect databases, not sampled to be balanced.</p>
+      </div>
+      <div>
+        <h4>02 &middot; One relation resists a single rule</h4>
+        <p><code>has_target</code> is the only predicate that needs a disjunction &mdash; (Compound&and;Molecule) &or; (Compound&and;Protein) &mdash; because OREGANO uses one relation name for two genuinely different target types.</p>
+      </div>
+      <div>
+        <h4>03 &middot; Universal claims mostly fail</h4>
+        <p>Of 31,652 compounds, only 3,503 (11%) have a recorded <code>has_activity</code> link. Only <code>has_phenotype</code> (Disease) and <code>gene_product_of</code> (Protein) hold as &forall; statements across their entire subject class.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Methods</h2>
+    <h3>Ontology first, first-order logic second, then check the &forall; claims empirically</h3>
+    <p class="lead">Domain and range for each predicate were read directly off the graph &mdash; grouping every unique (subject_class, relation, object_class) triple gave a snapshot of the ontology's structure, which was rebuilt in <code>owlready2</code> as a populated OWL graph so relations, instances and attributes could be queried directly rather than re-derived from the raw TSV each time. Each of the 17 core predicates (excluding the literal-valued <code>has_code</code>) was then written as &forall;x,&forall;y(predicate(x,y)) &rArr; domain(x) &and; range(y), and tested for whether the stronger &forall;x&isin;domain (&exist;y&isin;range) reading actually holds, by computing what fraction of each subject class the relation actually covers.</p>
+
+    <div class="illustration">
+      <table class="ledger" aria-label="Predicate coverage ledger">
+        <tr><th>Predicate</th><th>Domain &rarr; Range</th><th class="cov">Coverage</th><th class="q">&forall;/&exist;</th></tr>
+        <tr class="universal"><td class="pred">gene_product_of</td><td>Protein &rarr; Gene</td><td class="cov">100%</td><td class="q">&forall;</td></tr>
+        <tr class="universal"><td class="pred">has_phenotype</td><td>Disease &rarr; Phenotype</td><td class="cov">100%</td><td class="q">&forall;</td></tr>
+        <tr><td class="pred">has_target</td><td>Compound &rarr; Protein</td><td class="cov">94%</td><td class="q">&exist;</td></tr>
+        <tr><td class="pred">acts_within</td><td>Gene &rarr; Pathway</td><td class="cov">86%</td><td class="q">&exist;</td></tr>
+        <tr><td class="pred">has_activity</td><td>Compound &rarr; Activity</td><td class="cov">11%</td><td class="q">&exist;</td></tr>
+        <tr><td class="pred">is_substance_that_treats</td><td>Compound &rarr; Disease</td><td class="cov">1%</td><td class="q">&exist;</td></tr>
+        <tr><td class="pred">decrease_effect</td><td>Compound &rarr; Effect</td><td class="cov">1%</td><td class="q">&exist;</td></tr>
+      </table>
+      <p class="caption">coverage = share of the subject class for which the relation holds at least once &middot; only 100% rows support the &forall; reading</p>
+    </div>
+
+    <p class="close">The one deliberately-broken symmetry is <code>has_target</code>, which OREGANO's authors overload across Molecule and Protein ranges &mdash; handled here with an explicit disjunction rather than forcing a single range. Beyond that, the coverage check is a statistical proof-by-counterexample, not an axiomatic guarantee: it confirms a &forall; claim only insofar as the snapshot graph itself is complete, and OREGANO is known to be a partial extraction from source databases like DrugBank. A single populated-instance spot-check (querying <code>PROTEIN:1</code>'s <code>gene_product_of</code> value against the raw TSV) was used to confirm the OWL population step preserved the original triples correctly, but this is a sanity check on construction, not a validation of the biology itself.</p>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Data</h2>
+    <h3>Eighteen relation types, one of them a literal, and a very long tail</h3>
+    <p class="lead">OREGANO v2.1 ships as 823,005 subject&ndash;relation&ndash;object triples. Splitting the <code>subject</code>/<code>object</code> columns on their <code>:</code> separator recovers 11 entity classes (Compound, Protein, Gene, Disease, Pathway, Activity, Effect, Indication, Molecule, Phenotype, Side_Effect) and 18 relation types; excluding <code>has_code</code>, which points to a literal ATC code rather than another entity, leaves 819,602 triples across the 17 relations formalised above.</p>
+
+    <div class="illustration bar-chart rel">
+      <div class="bar-row"><span class="name">decrease_efficacy</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">215,222</span></div>
+      <div class="bar-row"><span class="name">has_target</span><div class="bar-track"><div class="bar-fill" style="width:94.1%"></div></div><span class="count">202,539</span></div>
+      <div class="bar-row"><span class="name">has_side_effect</span><div class="bar-track"><div class="bar-fill" style="width:52.3%"></div></div><span class="count">112,532</span></div>
+      <div class="bar-row"><span class="name">has_phenotype</span><div class="bar-track"><div class="bar-fill" style="width:41.3%"></div></div><span class="count">88,791</span></div>
+      <div class="bar-row"><span class="name">acts_within</span><div class="bar-track"><div class="bar-fill" style="width:20.8%"></div></div><span class="count">44,865</span></div>
+      <div class="bar-row"><span class="name">increase_efficacy</span><div class="bar-track"><div class="bar-fill" style="width:20.5%"></div></div><span class="count">44,114</span></div>
+      <div class="bar-row"><span class="name">has_effect</span><div class="bar-track"><div class="bar-fill" style="width:8.9%"></div></div><span class="count">19,160</span></div>
+      <div class="bar-row"><span class="name">increase_effect</span><div class="bar-track"><div class="bar-fill" style="width:8.8%"></div></div><span class="count">18,999</span></div>
+      <p class="caption">8 largest relation types by triple count, of 18 total &middot; full graph n=823,005</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    <a class="cta" href="https://github.com/cbrown564-alt/qub-msc-ai/blob/main/semester-1/knowledge-engineering/cw1-oregano-knowledge-graph/conor_brown_40466218_code_1.ipynb">Open the full notebook &rarr;</a>
+  </div>
+  <span class="fine">The PyVis ontology visualisation and the full OWL construction code are in the notebook. Part 2 queries this exact graph via SPARQL metapaths to surface a drug-repurposing candidate, then ranks treatments with a Bayesian network &mdash; <a href="../cw2-bayesian-network-drug-interactions/case-study.html">see it here</a>.</span>
+</footer>
+
+</body>
+</html>
