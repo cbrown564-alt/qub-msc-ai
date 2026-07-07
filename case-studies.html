@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Case Studies — MSc AI, Queen's University Belfast</title>
+<meta name="description" content="All 12 coursework case studies from the MSc AI programme, browsable in one place.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+  *{ box-sizing: border-box; }
+  html, body{ margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font-serif); }
+
+  .topbar{
+    display: flex; align-items: center; justify-content: space-between;
+    height: 52px; padding: 0 1.1rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar .brand{
+    font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink); text-decoration: none;
+  }
+  .topbar .back{
+    font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); text-decoration: none;
+  }
+  .topbar .back:hover{ color: var(--amber); }
+
+  .shell{ display: flex; height: calc(100vh - 52px); }
+
+  .sidebar{
+    width: 300px; flex: none; overflow-y: auto;
+    border-right: 1px solid var(--line);
+    padding: 1.1rem 0.75rem 2rem;
+  }
+  .sidebar h2{
+    font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted);
+    margin: 1.3rem 0 0.4rem; padding: 0 0.55rem;
+  }
+  .sidebar h2:first-child{ margin-top: 0.15rem; }
+  .mod{ margin-bottom: 0.15rem; }
+  .mod-name{
+    font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-dim);
+    padding: 0.5rem 0.55rem 0.2rem;
+  }
+  .tab-btn{
+    display: block; width: 100%; text-align: left;
+    background: none; border: none; border-left: 2px solid transparent;
+    font-family: var(--font-serif); font-size: 0.92rem; color: var(--ink-dim);
+    padding: 0.38rem 0.55rem; cursor: pointer; border-radius: 0 6px 6px 0;
+    line-height: 1.35;
+  }
+  .tab-btn:hover{ background: var(--amber-soft); color: var(--ink); }
+  .tab-btn.active{
+    border-left-color: var(--amber); color: var(--amber);
+    background: var(--amber-soft); font-weight: 600;
+  }
+
+  .viewer{ flex: 1; position: relative; min-width: 0; }
+  .viewer iframe{ width: 100%; height: 100%; border: none; display: block; background: var(--bg); }
+  .popout{
+    position: absolute; top: 0.6rem; right: 0.9rem; z-index: 2;
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px;
+    color: var(--ink-dim); text-decoration: none; font-size: 0.95rem;
+  }
+  .popout:hover{ color: var(--amber); border-color: var(--amber); }
+
+  @media (max-width: 760px){
+    .shell{ flex-direction: column; height: auto; }
+    .sidebar{
+      width: 100%; height: auto; max-height: 40vh;
+      border-right: none; border-bottom: 1px solid var(--line);
+    }
+    .viewer{ height: 70vh; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="brand" href="README.md">MSc AI &middot; Queen's University Belfast</a>
+  <a class="back" href="README.md">&larr; back to README</a>
+</div>
+
+<div class="shell">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="viewer">
+    <a class="popout" id="popout" href="#" target="_blank" rel="noopener" title="Open this case study standalone">&#8599;</a>
+    <iframe id="viewer-frame" title="Case study viewer"></iframe>
+  </div>
+</div>
+
+<script>
+  var CASES = [
+    { group: "Semester 1", mod: "Foundations of AI · ECS8050", items: [
+      { id: "fai-cw1", title: "CW1 · Violent Crime Regression", path: "semester-1/foundations-of-ai/cw1-violent-crime-regression/case-study.html" },
+      { id: "fai-cw2", title: "CW2 · Violent Crime Extended", path: "semester-1/foundations-of-ai/cw2-violent-crime-extended/case-study.html" }
+    ]},
+    { group: "Semester 1", mod: "Machine Learning · ECS8051", items: [
+      { id: "ml-cw1", title: "CW1 · ETF Return Prediction", path: "semester-1/machine-learning/cw1-etf-return-prediction/case-study.html" },
+      { id: "ml-cw2", title: "CW2 · Market Regime Detection", path: "semester-1/machine-learning/cw2-market-regime-detection/case-study.html" }
+    ]},
+    { group: "Semester 1", mod: "Knowledge Engineering · ECS8052", items: [
+      { id: "ke-cw1", title: "CW1 · Oregano Knowledge Graph", path: "semester-1/knowledge-engineering/cw1-oregano-knowledge-graph/case-study.html" },
+      { id: "ke-cw2", title: "CW2 · Drug Repurposing (Bayesian Network)", path: "semester-1/knowledge-engineering/cw2-bayesian-network-drug-interactions/case-study.html" }
+    ]},
+    { group: "Semester 2", mod: "Computer Vision · ECS8053", items: [
+      { id: "cv-cw1", title: "CW1 · TinyImageNet Classification", path: "semester-2/computer-vision/cw1-tinyimagenet-classification/case-study.html" },
+      { id: "cv-cw2", title: "CW2 · Neural Networks", path: "semester-2/computer-vision/cw2-neural-networks/case-study.html" }
+    ]},
+    { group: "Semester 2", mod: "Natural Language Processing · ECS8054", items: [
+      { id: "nlp-cw1", title: "CW1 · LLM Linguistic Structure", path: "semester-2/natural-language-processing/cw1-llm-linguistic-structure/case-study.html" },
+      { id: "nlp-cw2", title: "CW2 · Classification, Sentiment & Q&A", path: "semester-2/natural-language-processing/cw2-classification-sentiment-q+a-LLMs/case-study.html" }
+    ]},
+    { group: "Semester 2", mod: "AI for Health · ECS8055", items: [
+      { id: "ai4h-cw1", title: "CW1 · DNA Methylation Preprocessing", path: "semester-2/ai-for-health/cw1-dna-methylation-classification/case-study.html" },
+      { id: "ai4h-cw2", title: "CW2 · Medulloblastoma Subtype Classification", path: "semester-2/ai-for-health/cw2-dna-methylation-classification/case-study.html" }
+    ]}
+  ];
+
+  function render(){
+    var sidebar = document.getElementById('sidebar');
+    var html = '';
+    var lastGroup = null;
+    CASES.forEach(function(section){
+      if (section.group !== lastGroup){
+        html += '<h2>' + section.group + '</h2>';
+        lastGroup = section.group;
+      }
+      html += '<div class="mod"><div class="mod-name">' + section.mod + '</div>';
+      section.items.forEach(function(item){
+        html += '<button class="tab-btn" data-id="' + item.id + '" data-path="' + item.path + '">' + item.title + '</button>';
+      });
+      html += '</div>';
+    });
+    sidebar.innerHTML = html;
+    sidebar.querySelectorAll('.tab-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        selectTab(btn.dataset.id, btn.dataset.path);
+      });
+    });
+  }
+
+  function selectTab(id, path){
+    document.querySelectorAll('.tab-btn').forEach(function(b){
+      b.classList.toggle('active', b.dataset.id === id);
+    });
+    document.getElementById('viewer-frame').src = path;
+    document.getElementById('popout').href = path;
+    history.replaceState(null, '', '#' + id);
+  }
+
+  function init(){
+    render();
+    var all = CASES.reduce(function(acc, s){ return acc.concat(s.items); }, []);
+    var hash = location.hash.replace('#', '');
+    var initial = all.find(function(i){ return i.id === hash; }) || all[0];
+    selectTab(initial.id, initial.path);
+  }
+
+  init();
+</script>
+
+</body>
+</html>
