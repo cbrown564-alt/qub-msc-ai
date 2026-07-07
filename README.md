@@ -2,7 +2,7 @@
 
 My actual notebooks from the programme. The thinking is visible. The dead ends are in there too.
 
-Each assignment below has a **case study** — a short, results-first summary you can read without opening the notebook. Browse all 12 in one place: [case-studies.html](case-studies.html).
+Each assignment below has a **case study** — a short, results-first summary you can read without opening the notebook. Browse all 12 in one place: [case-studies.html](https://cbrown564-alt.github.io/qub-msc-ai/case-studies.html#fai-cw1).
 
 ---
 
