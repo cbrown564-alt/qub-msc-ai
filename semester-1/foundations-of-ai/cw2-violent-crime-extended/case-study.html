@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ridge Regression from Scratch vs. Dimension Reduction — Case Study</title>
+<meta name="description" content="A hand-written Ridge regressor, tuned by gradient descent, matched raw linear regression's accuracy on all 99 features while a variance-inflation-factor feature cull nearly quadrupled test error — regularisation, not reduction, handled the noise.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --blue: #2f5f7d;
+    --blue-soft: rgba(47,95,125,0.13);
+    --err: #9c3b26;
+    --err-soft: rgba(156,59,38,0.13);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  a{ color: var(--amber); text-decoration-color: rgba(156,97,30,0.4); text-underline-offset: 3px; }
+  a:hover{ text-decoration-color: var(--amber); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow a{ color: var(--muted); }
+
+  /* section 1: findings */
+  .findings{
+    position: relative;
+    padding: 4.2rem 1.5rem 3.5rem;
+    background-image: radial-gradient(circle at 1px 1px, rgba(20,22,25,0.07) 1px, transparent 0);
+    background-size: 26px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1{
+    font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+    line-height: 1.14;
+    font-weight: 400;
+    margin: 0 0 1.3rem;
+    max-width: 19ch;
+  }
+  h1 em{ font-style: italic; color: var(--amber); }
+
+  .thesis{
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--ink-dim);
+    max-width: 60ch;
+    margin: 0 0 2.4rem;
+  }
+  .thesis strong{ color: var(--ink); font-weight: 600; }
+
+  .stat-rail{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2.6rem;
+  }
+  .stat{ background: var(--panel); padding: 1.2rem 1.3rem; }
+  .stat .num{
+    font-family: var(--font-mono);
+    font-size: clamp(1.4rem, 2.8vw, 1.9rem);
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat .lbl{ font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .stat .lbl b{ color: var(--ink-dim); font-weight: 600; }
+
+  /* illustration components (one per section) */
+  .illustration{ margin: 0 auto 2.4rem; }
+  .cm-scroll{ overflow-x: auto; padding-bottom: 2px; }
+  table.cm{
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    margin: 0 auto;
+    background: var(--panel);
+  }
+  table.cm th, table.cm td{
+    width: 40px; height: 32px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  table.cm th{ font-weight: 400; color: var(--muted); font-size: 0.66rem; }
+  table.cm th.corner{ border: none; }
+  table.cm th.rowhead{ text-align: right; padding-right: 0.6rem; white-space: nowrap; border: none; }
+  table.cm td.diag{ background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  table.cm td.err{ background: var(--err-soft); color: var(--err); font-weight: 600; }
+  table.cm td.zero{ color: rgba(23,25,29,0.16); }
+
+  .caption{
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.9rem 0 0;
+  }
+
+  .findings-list{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin-top: 0.6rem;
+  }
+  .findings-list div h4{
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+  }
+  .findings-list div p{ font-size: 0.94rem; margin: 0; color: var(--ink-dim); }
+
+  /* sections 2 & 3 */
+  section.body{ padding: 3.6rem 1.5rem; }
+  section.body + section.body{ border-top: 1px solid var(--line); }
+  section.body h2{
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    font-weight: 500;
+    margin: 0 0 0.4rem;
+  }
+  section.body h3{
+    font-family: var(--font-serif);
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 1.2rem;
+  }
+  section.body p{ color: var(--ink-dim); max-width: 66ch; }
+  section.body p.lead{ color: var(--ink); font-size: 1.04rem; max-width: 64ch; }
+  section.body p.close{ font-size: 0.94rem; max-width: 66ch; margin-top: 2rem; }
+  code{ font-family: var(--font-mono); color: var(--ink); background: var(--amber-soft); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+
+  .iter-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .iter-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .iter-labels{ display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .bar-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .bar-row{ display: grid; grid-template-columns: 132px 1fr 68px; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+  .bar-row .name{ color: var(--muted); text-align: right; }
+  .bar-track{ background: var(--line); border-radius: 3px; height: 9px; overflow: hidden; }
+  .bar-fill{ height: 100%; background: var(--amber); border-radius: 3px; }
+  .bar-fill.is-blue{ background: var(--blue); }
+  .bar-fill.is-err{ background: var(--err); }
+  .bar-row .count{ color: var(--ink-dim); }
+
+  /* diverging coefficient-comparison chart (new component, same tokens) */
+  .diverging-chart{ max-width: 560px; margin: 1.8rem auto 0; }
+  .div-row{ margin-bottom: 1.3rem; }
+  .div-name{ font-family: var(--font-mono); font-size: 0.76rem; color: var(--ink-dim); margin-bottom: 0.35rem; }
+  .div-name .flag{ color: var(--err); font-size: 0.7rem; }
+  .div-row svg{ width: 100%; height: auto; display: block; }
+  .legend-row{ display: flex; gap: 1.6rem; justify-content: center; margin-top: 0.6rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); }
+  .legend-row .dot{ display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.4rem; vertical-align: middle; }
+  .legend-row .dot.amber{ background: var(--amber); }
+  .legend-row .dot.err{ background: var(--err); }
+
+  footer{
+    padding: 2.8rem 1.5rem 3.6rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem;
+    align-items: center; justify-content: space-between;
+  }
+  .cta{
+    font-family: var(--font-mono); font-size: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.7rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta:hover{ border-color: var(--amber); color: var(--amber); }
+  .fine{ font-size: 0.8rem; color: var(--muted); max-width: 46ch; }
+
+  @media (max-width: 760px){
+    .findings-list{ grid-template-columns: 1fr; gap: 1.4rem; }
+    .stat-rail{ grid-template-columns: 1fr; }
+    .bar-row{ grid-template-columns: 92px 1fr 60px; }
+  }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<section class="findings">
+  <div class="wrap">
+    <p class="eyebrow"><a href="../../../README.md">MSc AI, Queen's University Belfast</a> · ECS8050 Foundations of AI · Coursework 2 of 2</p>
+    <h1>Regularising all 99 features beat every attempt to <em>cut them down</em></h1>
+    <p class="thesis">Part 1 found that PCA/SVD dimensionality reduction hurt this crime-rate model. Part 2 builds a Ridge regressor from scratch &mdash; gradient descent, no scikit-learn &mdash; to ask a sharper question: is the real problem dimensionality, or noise in correlated features? Regularising the full feature set matched the raw model's accuracy and tamed wild, collinearity-driven coefficients, while a second, harsher attempt at feature-cutting made things far worse.</p>
+
+    <div class="stat-rail">
+      <div class="stat">
+        <span class="num">0.021</span>
+        <span class="lbl">test MSE, hand-written <b>Ridge + gradient descent</b> on all 99 features &mdash; 0.002 off the unregularised benchmark (0.019)</span>
+      </div>
+      <div class="stat">
+        <span class="num">3.6&times;</span>
+        <span class="lbl">worse test MSE (0.019&rarr;0.076) after pruning to <b>57 low-collinearity features</b> &mdash; cutting hurt more here than PCA did in Part 1</span>
+      </div>
+      <div class="stat">
+        <span class="num">8&times;</span>
+        <span class="lbl">smaller peak coefficient magnitude for ridge vs. the <b>unregularised fit</b> on the same features (&plusmn;0.09 vs. &plusmn;0.7)</span>
+      </div>
+    </div>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">Ridge + gradient descent</span><div class="bar-track"><div class="bar-fill" style="width:24.7%"></div></div><span class="count">0.021</span></div>
+      <div class="bar-row"><span class="name">Unregularised (SVD)</span><div class="bar-track"><div class="bar-fill is-blue" style="width:22.4%"></div></div><span class="count">0.019</span></div>
+      <div class="bar-row"><span class="name">VIF-pruned, 57 features</span><div class="bar-track"><div class="bar-fill is-err" style="width:89.4%"></div></div><span class="count">0.076</span></div>
+      <p class="caption">test-set MSE, all on the same 99-feature/57-feature train/test split &middot; lower is better</p>
+    </div>
+
+    <div class="findings-list">
+      <div>
+        <h4>01 &middot; Regularising kept nearly all the raw accuracy</h4>
+        <p>Ridge + gradient descent scored 0.021 test MSE, level with the 0.019 unregularised benchmark on the identical 99-feature split &mdash; the two models' predictions correlate at 0.961. Regularisation cost almost nothing in raw accuracy.</p>
+      </div>
+      <div>
+        <h4>02 &middot; Cutting collinear features backfired worse than PCA did</h4>
+        <p>Dropping every feature with VIF &gt; 10 shrank the input from 99 to 57 but nearly quadrupled test error (0.019&rarr;0.076). The same "fewer features" instinct that hurt PCA/SVD in Part 1 hurts here too, via a different selection method.</p>
+      </div>
+      <div>
+        <h4>03 &middot; Same feature, opposite sign</h4>
+        <p>Without regularisation, TotalPctDiv's coefficient flips from a sensible +0.05 (ridge) to &minus;0.62 (unregularised) &mdash; a textbook symptom of multicollinearity among correlated features that the ridge penalty resolved.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Methods</h2>
+    <h3>Ridge, tuned by gradient descent across ~4,000 configurations</h3>
+    <p class="lead">A Ridge regressor solved by mini-batch gradient descent with momentum and learning-rate decay (no scikit-learn) was built to test Part 1's conclusion more directly: is the problem dimensionality, or noise in correlated features? Learning rate and batch size were grid-searched with early stopping on validation MSE (winner: LR=1, batch=32), on top of a broader ~4,000-combination sweep over momentum, decay and patience run separately &mdash; and the final model trains on all 99 standardised features, no reduced subset.</p>
+
+    <div class="illustration diverging-chart">
+      <div class="div-row">
+        <div class="div-name">TotalPctDiv <span class="flag">&mdash; sign flips under no regularisation</span></div>
+        <svg viewBox="0 0 560 40" preserveAspectRatio="xMinYMid meet">
+          <line x1="280" y1="0" x2="280" y2="40" stroke="rgba(20,22,25,0.22)" stroke-width="1"/>
+          <rect x="280" y="3" width="17.8" height="12" rx="2" fill="#9c611e"/>
+          <text x="301" y="13" fill="#43464d" font-family="ui-monospace, monospace" font-size="10.5" text-anchor="start">+0.048</text>
+          <rect x="50" y="21" width="230" height="12" rx="2" fill="#9c3b26"/>
+          <text x="46" y="31" fill="#43464d" font-family="ui-monospace, monospace" font-size="10.5" text-anchor="end">&minus;0.62</text>
+        </svg>
+      </div>
+      <div class="div-row">
+        <div class="div-name">PctKids2Par</div>
+        <svg viewBox="0 0 560 40" preserveAspectRatio="xMinYMid meet">
+          <line x1="280" y1="0" x2="280" y2="40" stroke="rgba(20,22,25,0.22)" stroke-width="1"/>
+          <rect x="255.9" y="3" width="24.1" height="12" rx="2" fill="#9c611e"/>
+          <text x="251.9" y="13" fill="#43464d" font-family="ui-monospace, monospace" font-size="10.5" text-anchor="end">&minus;0.065</text>
+          <rect x="153.9" y="21" width="126.1" height="12" rx="2" fill="#9c3b26"/>
+          <text x="149.9" y="31" fill="#43464d" font-family="ui-monospace, monospace" font-size="10.5" text-anchor="end">&minus;0.34</text>
+        </svg>
+      </div>
+      <div class="div-row">
+        <div class="div-name">MalePctDivorce</div>
+        <svg viewBox="0 0 560 40" preserveAspectRatio="xMinYMid meet">
+          <line x1="280" y1="0" x2="280" y2="40" stroke="rgba(20,22,25,0.22)" stroke-width="1"/>
+          <rect x="280" y="3" width="19.7" height="12" rx="2" fill="#9c611e"/>
+          <text x="303.7" y="13" fill="#43464d" font-family="ui-monospace, monospace" font-size="10.5" text-anchor="start">+0.053</text>
+          <rect x="280" y="21" width="181.8" height="12" rx="2" fill="#9c3b26"/>
+          <text x="465.8" y="31" fill="#43464d" font-family="ui-monospace, monospace" font-size="10.5" text-anchor="start">+0.49</text>
+        </svg>
+      </div>
+      <div class="legend-row"><span><span class="dot amber"></span>Ridge (regularised)</span><span><span class="dot err"></span>Unregularised (pseudo-inverse / SVD)</span></div>
+      <p class="caption">model coefficients on the same three features, read from the notebook's top/bottom-10 coefficient plots</p>
+    </div>
+
+    <p class="close">On the held-out test set, ridge scored 0.021 MSE against 0.019 for the unregularised pseudo-inverse solution on the same features &mdash; a gap within noise, and the two models' predictions correlate at 0.961. The real difference is underneath: on shared top-weighted features, ridge's coefficients stayed within about &plusmn;0.09, while the unregularised fit swung to &plusmn;0.7 on the same features and, for TotalPctDiv, flipped sign entirely &mdash; a classic symptom of multicollinearity, later confirmed directly by a variance-inflation-factor check that flagged features well past the conventional VIF&gt;10 threshold. Residuals are visually close to normal but not by a strict Shapiro&ndash;Wilk test (W=0.920, p&lt;.001, on n=399), and the model produces a handful of small, physically invalid negative crime-rate predictions near zero &mdash; a known blind spot of an unconstrained linear model applied to a rate that can't go below 0. The VIF-pruned comparison model (99&rarr;57 features, dropped in order of collinearity) underfits badly, which is really the same lesson as Part 1's PCA result: this dataset's redundancy is exactly where a lot of its predictive signal lives.</p>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Data</h2>
+    <h3>A right-skewed target, and a handful of features that actually explain it</h3>
+    <p class="lead">The same 1,994-community, 99-feature dataset from Part 1, examined here for what predicts crime rather than how to compress it. The target is heavily right-skewed (skew 1.52, kurtosis 1.83): median violent crime rate is 0.15, yet 44 communities sit at the maximum value of 1 &mdash; over 6&times; the typical community, and disproportionately cities. Two hypothesis tests (high- vs. low-poverty; high- vs. low-% white) both rejected the null at p&lt;.001, confirming real structure behind the correlations below.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">PctIlleg</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">+0.738</span></div>
+      <div class="bar-row"><span class="name">PctKids2Par</span><div class="bar-track"><div class="bar-fill is-blue" style="width:100%"></div></div><span class="count">&minus;0.738</span></div>
+      <div class="bar-row"><span class="name">PctFam2Par</span><div class="bar-track"><div class="bar-fill is-blue" style="width:95.7%"></div></div><span class="count">&minus;0.707</span></div>
+      <div class="bar-row"><span class="name">racePctWhite</span><div class="bar-track"><div class="bar-fill is-blue" style="width:92.8%"></div></div><span class="count">&minus;0.685</span></div>
+      <div class="bar-row"><span class="name">PctYoungKids2Par</span><div class="bar-track"><div class="bar-fill is-blue" style="width:90.2%"></div></div><span class="count">&minus;0.666</span></div>
+      <div class="bar-row"><span class="name">PctTeen2Par</span><div class="bar-track"><div class="bar-fill is-blue" style="width:89.6%"></div></div><span class="count">&minus;0.662</span></div>
+      <div class="bar-row"><span class="name">racepctblack</span><div class="bar-track"><div class="bar-fill" style="width:85.5%"></div></div><span class="count">+0.631</span></div>
+      <div class="bar-row"><span class="name">pctWInvInc</span><div class="bar-track"><div class="bar-fill is-blue" style="width:78.1%"></div></div><span class="count">&minus;0.576</span></div>
+      <p class="caption">Pearson correlation with violent crime rate, strongest 8 by magnitude &middot; amber = positively associated, blue = negatively associated</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    <a class="cta" href="https://github.com/cbrown564-alt/qub-msc-ai/blob/main/semester-1/foundations-of-ai/cw2-violent-crime-extended/ECS8050_CW2_40466218_code.ipynb">Open the full notebook &rarr;</a>
+  </div>
+  <span class="fine">The full grid search, VIF table, residual/error-by-subgroup plots, and a downstream Markov Decision Process on crime/poverty states are in the notebook. Part 1 covers the PCA/SVD dimensionality-reduction analysis this coursework builds on &mdash; <a href="../cw1-violent-crime-regression/case-study.html">see it here</a>.</span>
+</footer>
+
+</body>
+</html>

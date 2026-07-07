@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dimensionality Reduction vs. Raw Features: Predicting US Violent Crime — Case Study</title>
+<meta name="description" content="A linear regression on all 99 cleaned socio-economic features beat every PCA/SVD-reduced version of itself when predicting violent crime rates across 1,994 US communities — dimensionality reduction cut compute, not error.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --blue: #2f5f7d;
+    --blue-soft: rgba(47,95,125,0.13);
+    --err: #9c3b26;
+    --err-soft: rgba(156,59,38,0.13);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  a{ color: var(--amber); text-decoration-color: rgba(156,97,30,0.4); text-underline-offset: 3px; }
+  a:hover{ text-decoration-color: var(--amber); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow a{ color: var(--muted); }
+
+  /* section 1: findings */
+  .findings{
+    position: relative;
+    padding: 4.2rem 1.5rem 3.5rem;
+    background-image: radial-gradient(circle at 1px 1px, rgba(20,22,25,0.07) 1px, transparent 0);
+    background-size: 26px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1{
+    font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+    line-height: 1.14;
+    font-weight: 400;
+    margin: 0 0 1.3rem;
+    max-width: 19ch;
+  }
+  h1 em{ font-style: italic; color: var(--amber); }
+
+  .thesis{
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--ink-dim);
+    max-width: 60ch;
+    margin: 0 0 2.4rem;
+  }
+  .thesis strong{ color: var(--ink); font-weight: 600; }
+
+  .stat-rail{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2.6rem;
+  }
+  .stat{ background: var(--panel); padding: 1.2rem 1.3rem; }
+  .stat .num{
+    font-family: var(--font-mono);
+    font-size: clamp(1.4rem, 2.8vw, 1.9rem);
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat .lbl{ font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .stat .lbl b{ color: var(--ink-dim); font-weight: 600; }
+
+  /* illustration components (one per section) */
+  .illustration{ margin: 0 auto 2.4rem; }
+  .cm-scroll{ overflow-x: auto; padding-bottom: 2px; }
+  table.cm{
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    margin: 0 auto;
+    background: var(--panel);
+  }
+  table.cm th, table.cm td{
+    width: 40px; height: 32px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  table.cm th{ font-weight: 400; color: var(--muted); font-size: 0.66rem; }
+  table.cm th.corner{ border: none; }
+  table.cm th.rowhead{ text-align: right; padding-right: 0.6rem; white-space: nowrap; border: none; }
+  table.cm td.diag{ background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  table.cm td.err{ background: var(--err-soft); color: var(--err); font-weight: 600; }
+  table.cm td.zero{ color: rgba(23,25,29,0.16); }
+
+  .caption{
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.9rem 0 0;
+  }
+
+  .findings-list{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin-top: 0.6rem;
+  }
+  .findings-list div h4{
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+  }
+  .findings-list div p{ font-size: 0.94rem; margin: 0; color: var(--ink-dim); }
+
+  /* sections 2 & 3 */
+  section.body{ padding: 3.6rem 1.5rem; }
+  section.body + section.body{ border-top: 1px solid var(--line); }
+  section.body h2{
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    font-weight: 500;
+    margin: 0 0 0.4rem;
+  }
+  section.body h3{
+    font-family: var(--font-serif);
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 1.2rem;
+  }
+  section.body p{ color: var(--ink-dim); max-width: 66ch; }
+  section.body p.lead{ color: var(--ink); font-size: 1.04rem; max-width: 64ch; }
+  section.body p.close{ font-size: 0.94rem; max-width: 66ch; margin-top: 2rem; }
+  code{ font-family: var(--font-mono); color: var(--ink); background: var(--amber-soft); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+
+  .iter-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .iter-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .iter-labels{ display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .bar-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .bar-row{ display: grid; grid-template-columns: 132px 1fr 68px; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+  .bar-row .name{ color: var(--muted); text-align: right; }
+  .bar-track{ background: var(--line); border-radius: 3px; height: 9px; overflow: hidden; }
+  .bar-fill{ height: 100%; background: var(--amber); border-radius: 3px; }
+  .bar-fill.is-blue{ background: var(--blue); }
+  .bar-fill.is-err{ background: var(--err); }
+  .bar-row .count{ color: var(--ink-dim); }
+
+  footer{
+    padding: 2.8rem 1.5rem 3.6rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem;
+    align-items: center; justify-content: space-between;
+  }
+  .cta{
+    font-family: var(--font-mono); font-size: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.7rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta:hover{ border-color: var(--amber); color: var(--amber); }
+  .fine{ font-size: 0.8rem; color: var(--muted); max-width: 46ch; }
+
+  @media (max-width: 760px){
+    .findings-list{ grid-template-columns: 1fr; gap: 1.4rem; }
+    .stat-rail{ grid-template-columns: 1fr; }
+    .bar-row{ grid-template-columns: 92px 1fr 60px; }
+  }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<section class="findings">
+  <div class="wrap">
+    <p class="eyebrow"><a href="../../../README.md">MSc AI, Queen's University Belfast</a> · ECS8050 Foundations of AI · Coursework 1 of 2</p>
+    <h1>Cutting 99 features down to 25 <em>made the model worse, not better</em></h1>
+    <p class="thesis">A linear regression trained on all 99 cleaned socio-economic features predicted violent crime rates across 1,994 US communities more accurately than the same model trained on 25&ndash;50 SVD principal components. Dimensionality reduction bought a smaller dataset here &mdash; it didn't buy a better one.</p>
+
+    <div class="stat-rail">
+      <div class="stat">
+        <span class="num">0.137</span>
+        <span class="lbl">RMSE, plain linear regression on all <b>99 cleaned features</b> &mdash; the best of five approaches tried</span>
+      </div>
+      <div class="stat">
+        <span class="num">0.141</span>
+        <span class="lbl">RMSE using <b>25 SVD components</b> &mdash; cutting 3 in 4 features raised error by just 3%</span>
+      </div>
+      <div class="stat">
+        <span class="num">81%</span>
+        <span class="lbl">of variance packed into <b>PC1 alone</b> before scaling &mdash; an artefact of raw feature scale, not real structure</span>
+      </div>
+    </div>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">Original, 99 features</span><div class="bar-track"><div class="bar-fill" style="width:46.0%"></div></div><span class="count">0.1369</span></div>
+      <div class="bar-row"><span class="name">Scaled, 50 PCs</span><div class="bar-track"><div class="bar-fill is-blue" style="width:64.2%"></div></div><span class="count">0.1396</span></div>
+      <div class="bar-row"><span class="name">Scaled + OHE, 50 PCs</span><div class="bar-track"><div class="bar-fill is-blue" style="width:64.2%"></div></div><span class="count">0.1396</span></div>
+      <div class="bar-row"><span class="name">Scaled, 25 PCs</span><div class="bar-track"><div class="bar-fill is-blue" style="width:74.3%"></div></div><span class="count">0.1411</span></div>
+      <div class="bar-row"><span class="name">Scaled + OHE, 25 PCs</span><div class="bar-track"><div class="bar-fill is-blue" style="width:74.3%"></div></div><span class="count">0.1411</span></div>
+      <p class="caption">test-set RMSE by dataset &middot; lower is better &middot; axis starts at 0.130, not 0 &middot; identical 80/20 split, random_state fixed</p>
+    </div>
+
+    <div class="findings-list">
+      <div>
+        <h4>01 &middot; Raw data wins, quietly</h4>
+        <p>Linear regression on all 99 cleaned features scored 0.137 RMSE, beating every SVD-reduced version tried &mdash; 0.140&ndash;0.141 for 25&ndash;50 principal components. Fewer dimensions removed some noise, but it removed real signal along with it.</p>
+      </div>
+      <div>
+        <h4>02 &middot; Scaling isn't optional, it's the whole game</h4>
+        <p>Without standardising first, PC1 alone "explained" 81% of the variance &mdash; an artefact of features sitting on wildly different raw scales (income vs. household counts), not real structure. After scaling, PC1's honest share fell to 25%.</p>
+      </div>
+      <div>
+        <h4>03 &middot; One-hot encoding cost 1,828 columns for nothing</h4>
+        <p>Encoding the community-name field ballooned the feature space from 99 to 1,927 columns. After reduction to the same number of components, RMSE barely moved (0.139625 vs. 0.139627) &mdash; exactly as the dataset's own authors advised.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Methods</h2>
+    <h3>SVD three ways, scored the same way, on the same split</h3>
+    <p class="lead">SVD was applied to three prepared versions of the data &mdash; raw/unscaled, standardised, and standardised-plus-one-hot &mdash; to see whether reducing 99 features to a handful of principal components would strip noise or strip signal. A plain linear regression (fit via the SVD/pseudo-inverse solution) was then scored on RMSE against a fixed 80/20 split for the original data and for 25- and 50-component versions of each reduced dataset, so every number in the comparison shares the same test set and the same model.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">Base (unscaled)</span><div class="bar-track"><div class="bar-fill is-err" style="width:97.7%"></div></div><span class="count">81.1%</span></div>
+      <div class="bar-row"><span class="name">Scaled</span><div class="bar-track"><div class="bar-fill" style="width:30.6%"></div></div><span class="count">25.4%</span></div>
+      <div class="bar-row"><span class="name">Scaled + OHE</span><div class="bar-track"><div class="bar-fill" style="width:30.3%"></div></div><span class="count">25.1%</span></div>
+      <p class="caption">share of total variance captured by principal component 1, per preprocessing choice</p>
+    </div>
+
+    <p class="close">Standardising the data first turned out to be a precondition for SVD to mean anything: on unscaled data, PC1 alone captured 81% of variance simply because a handful of features (population counts, absolute dollar amounts) sit on much larger raw scales than the rest &mdash; not because the data has one dominant underlying factor. Once scaled, PC1 dropped to a believable 25%, and its top loadings (median family income, % receiving public assistance, % of kids with two parents) matched real, interpretable structure &mdash; later confirmed by scatter plots showing PC1 tracking median family income and PC2 tracking recent immigration. The honest limitation is the headline comparison itself: RMSE differences between 0.137 and 0.141 are small in absolute terms, and a single fixed train/test split (no cross-validation) means this ranking could shift a little with a different seed. What it does support cleanly is the direction of the effect, replicated across both 25 and 50 components and with or without one-hot encoding: reduction cost accuracy, it didn't add any.</p>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Data</h2>
+    <h3>128 variables in, 99 clean numeric features out</h3>
+    <p class="lead">1,994 US communities, each described by 128 variables spanning the 1990 Census, the 1990 LEMAS policing survey, and 1995 FBI crime statistics (127 candidate predictors plus the violent-crime-rate target). Cleaning was mostly about deciding what to throw away before any modelling started.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">Raw predictor variables</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">127</span></div>
+      <div class="bar-row"><span class="name">After dropping near-empty &amp; non-predictive fields</span><div class="bar-track"><div class="bar-fill" style="width:78.7%"></div></div><span class="count">100</span></div>
+      <div class="bar-row"><span class="name">Final numeric features used</span><div class="bar-track"><div class="bar-fill" style="width:78.0%"></div></div><span class="count">99</span></div>
+      <p class="caption">feature count through cleaning &middot; 22 LEMAS survey fields were &gt;80% missing and dropped outright &middot; communityname (the 1 remaining categorical field) was one-hot encoded separately, then shown to add nothing</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    <a class="cta" href="https://github.com/cbrown564-alt/qub-msc-ai/blob/main/semester-1/foundations-of-ai/cw1-violent-crime-regression/ECS8050_CW1_40466218.ipynb">Open the full notebook &rarr;</a>
+  </div>
+  <span class="fine">Full missing-value tables, scaling illustrations, and PC-loading scatter plots are in the notebook. Part 2 takes this further with a from-scratch Ridge regression and asks whether regularisation handles the same noise better than reduction did &mdash; <a href="../cw2-violent-crime-extended/case-study.html">see it here</a>.</span>
+</footer>
+
+</body>
+</html>

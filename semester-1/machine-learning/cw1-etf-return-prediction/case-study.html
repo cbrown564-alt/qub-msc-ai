@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Predicting ETF Returns with LightGBM — Case Study</title>
+<meta name="description" content="A tuned LightGBM model lifts directional accuracy 11 points over a Ridge baseline predicting next-10-day ETF returns, and tunes roughly 34x faster than XGBoost for a near-identical score.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --blue: #2f5f7d;
+    --err: #9c3b26;
+    --err-soft: rgba(156,59,38,0.13);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  a{ color: var(--amber); text-decoration-color: rgba(156,97,30,0.4); text-underline-offset: 3px; }
+  a:hover{ text-decoration-color: var(--amber); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow a{ color: var(--muted); }
+
+  /* section 1: findings */
+  .findings{
+    position: relative;
+    padding: 4.2rem 1.5rem 3.5rem;
+    background-image: radial-gradient(circle at 1px 1px, rgba(20,22,25,0.07) 1px, transparent 0);
+    background-size: 26px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1{
+    font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+    line-height: 1.14;
+    font-weight: 400;
+    margin: 0 0 1.3rem;
+    max-width: 19ch;
+  }
+  h1 em{ font-style: italic; color: var(--amber); }
+
+  .thesis{
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--ink-dim);
+    max-width: 60ch;
+    margin: 0 0 2.4rem;
+  }
+  .thesis strong{ color: var(--ink); font-weight: 600; }
+
+  .stat-rail{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2.6rem;
+  }
+  .stat{ background: var(--panel); padding: 1.2rem 1.3rem; }
+  .stat .num{
+    font-family: var(--font-mono);
+    font-size: clamp(1.4rem, 2.8vw, 1.9rem);
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat .lbl{ font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .stat .lbl b{ color: var(--ink-dim); font-weight: 600; }
+
+  /* illustration components (one per section) */
+  .illustration{ margin: 0 auto 2.4rem; }
+  .cm-scroll{ overflow-x: auto; padding-bottom: 2px; }
+  table.cm{
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    margin: 0 auto;
+    background: var(--panel);
+  }
+  table.cm th, table.cm td{
+    width: 40px; height: 32px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  table.cm th{ font-weight: 400; color: var(--muted); font-size: 0.66rem; }
+  table.cm th.corner{ border: none; }
+  table.cm th.rowhead{ text-align: right; padding-right: 0.6rem; white-space: nowrap; border: none; }
+  table.cm td.diag{ background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  table.cm td.err{ background: var(--err-soft); color: var(--err); font-weight: 600; }
+  table.cm td.zero{ color: rgba(23,25,29,0.16); }
+
+  .caption{
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.9rem 0 0;
+  }
+
+  .findings-list{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin-top: 0.6rem;
+  }
+  .findings-list div h4{
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+  }
+  .findings-list div p{ font-size: 0.94rem; margin: 0; color: var(--ink-dim); }
+
+  /* sections 2 & 3 */
+  section.body{ padding: 3.6rem 1.5rem; }
+  section.body + section.body{ border-top: 1px solid var(--line); }
+  section.body h2{
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    font-weight: 500;
+    margin: 0 0 0.4rem;
+  }
+  section.body h3{
+    font-family: var(--font-serif);
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 1.2rem;
+  }
+  section.body p{ color: var(--ink-dim); max-width: 66ch; }
+  section.body p.lead{ color: var(--ink); font-size: 1.04rem; max-width: 64ch; }
+  section.body p.close{ font-size: 0.94rem; max-width: 66ch; margin-top: 2rem; }
+  code{ font-family: var(--font-mono); color: var(--ink); background: var(--amber-soft); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+
+  .iter-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .iter-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .iter-labels{ display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .bar-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .bar-row{ display: grid; grid-template-columns: 84px 1fr 46px; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+  .bar-row .name{ color: var(--muted); text-align: right; }
+  .bar-track{ background: var(--line); border-radius: 3px; height: 9px; overflow: hidden; }
+  .bar-fill{ height: 100%; background: var(--amber); border-radius: 3px; }
+  .bar-fill.alt{ background: var(--blue); }
+  .bar-row .count{ color: var(--ink-dim); }
+
+  /* new: paired hit-rate chart (final model vs. baseline, per ticker) */
+  .hit-chart{ max-width: 580px; margin: 1.8rem auto 0; }
+  .hit-legend{ display: flex; gap: 1.4rem; justify-content: center; margin-bottom: 1.2rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); }
+  .hit-legend span{ display: inline-flex; align-items: center; gap: 0.4rem; }
+  .hit-legend i{ width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+  .hit-row{ display: grid; grid-template-columns: 40px 1fr 118px; align-items: center; gap: 0.8rem; margin-bottom: 0.55rem; }
+  .hit-row .tkr{ font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); text-align: right; }
+  .hit-bars{ display: flex; flex-direction: column; gap: 3px; }
+  .hit-track{ background: var(--line); border-radius: 3px; height: 7px; overflow: hidden; }
+  .hit-fill{ height: 100%; border-radius: 3px; }
+  .hit-fill.final{ background: var(--amber); }
+  .hit-fill.base{ background: var(--blue); }
+  .hit-vals{ font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); white-space: nowrap; }
+  .hit-vals b{ color: var(--amber); }
+
+  footer{
+    padding: 2.8rem 1.5rem 3.6rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem;
+    align-items: center; justify-content: space-between;
+  }
+  .cta{
+    font-family: var(--font-mono); font-size: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.7rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta:hover{ border-color: var(--amber); color: var(--amber); }
+  .fine{ font-size: 0.8rem; color: var(--muted); max-width: 46ch; }
+
+  @media (max-width: 760px){
+    .findings-list{ grid-template-columns: 1fr; gap: 1.4rem; }
+    .stat-rail{ grid-template-columns: 1fr; }
+    .hit-row{ grid-template-columns: 34px 1fr; }
+    .hit-vals{ grid-column: 2; text-align: left; }
+  }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<section class="findings">
+  <div class="wrap">
+    <p class="eyebrow"><a href="../../../README.md">MSc AI, Queen's University Belfast</a> · ECS8051 Machine Learning · Coursework 1 of 2</p>
+    <h1>LightGBM beats five other models at predicting ETF returns, and <em>tunes 34&times; faster</em> than its closest rival</h1>
+    <p class="thesis">Walk-forward validated across six sector ETFs, a tuned LightGBM model lifted directional accuracy <strong>11 percentage points</strong> and cut MAE <strong>8%</strong> versus a Ridge baseline on raw OHLCV data &mdash; while a systematic feature-selection process trimmed 57 candidate indicators down to 10 without giving up any accuracy.</p>
+
+    <div class="stat-rail">
+      <div class="stat">
+        <span class="num">+11 pts</span>
+        <span class="lbl">directional accuracy over the <b>Ridge baseline</b>, H=10, refit daily (step=1)</span>
+      </div>
+      <div class="stat">
+        <span class="num">&minus;8%</span>
+        <span class="lbl">MAE versus the same Ridge baseline &mdash; consistent across all <b>6 ETFs</b></span>
+      </div>
+      <div class="stat">
+        <span class="num">34s <span style="color:var(--muted); font-size:0.7em;">vs</span> 1152s</span>
+        <span class="lbl">hyperparameter search time, LightGBM vs. <b>XGBoost</b>, 100 iterations each</span>
+      </div>
+    </div>
+
+    <div class="illustration hit-chart">
+      <div class="hit-legend">
+        <span><i style="background:var(--amber)"></i>LightGBM, tuned + 10 features</span>
+        <span><i style="background:var(--blue)"></i>Ridge, default + raw OHLCV</span>
+      </div>
+      <div class="hit-row"><span class="tkr">XLE</span><div class="hit-bars"><div class="hit-track"><div class="hit-fill final" style="width:62.9%"></div></div><div class="hit-track"><div class="hit-fill base" style="width:50.7%"></div></div></div><span class="hit-vals"><b>62.9%</b> vs 50.7%</span></div>
+      <div class="hit-row"><span class="tkr">XLF</span><div class="hit-bars"><div class="hit-track"><div class="hit-fill final" style="width:60.0%"></div></div><div class="hit-track"><div class="hit-fill base" style="width:51.6%"></div></div></div><span class="hit-vals"><b>60.0%</b> vs 51.6%</span></div>
+      <div class="hit-row"><span class="tkr">XLI</span><div class="hit-bars"><div class="hit-track"><div class="hit-fill final" style="width:63.1%"></div></div><div class="hit-track"><div class="hit-fill base" style="width:53.2%"></div></div></div><span class="hit-vals"><b>63.1%</b> vs 53.2%</span></div>
+      <div class="hit-row"><span class="tkr">XLK</span><div class="hit-bars"><div class="hit-track"><div class="hit-fill final" style="width:65.9%"></div></div><div class="hit-track"><div class="hit-fill base" style="width:58.4%"></div></div></div><span class="hit-vals"><b>65.9%</b> vs 58.4%</span></div>
+      <div class="hit-row"><span class="tkr">XLP</span><div class="hit-bars"><div class="hit-track"><div class="hit-fill final" style="width:65.5%"></div></div><div class="hit-track"><div class="hit-fill base" style="width:55.1%"></div></div></div><span class="hit-vals"><b>65.5%</b> vs 55.1%</span></div>
+      <div class="hit-row"><span class="tkr">XLV</span><div class="hit-bars"><div class="hit-track"><div class="hit-fill final" style="width:63.0%"></div></div><div class="hit-track"><div class="hit-fill base" style="width:56.5%"></div></div></div><span class="hit-vals"><b>63.0%</b> vs 56.5%</span></div>
+      <p class="caption">directional accuracy by ticker, full walk-forward validation, H=10, refit every day (step=1)</p>
+    </div>
+
+    <div class="findings-list">
+      <div>
+        <h4>01 &middot; Feature engineering cuts both ways</h4>
+        <p>The 57 engineered volume/volatility/trend/momentum features improved every tree-based model but made Ridge <em>worse</em> &mdash; the curse of dimensionality in miniature, and the reason model and feature selection were run as separate experiments.</p>
+      </div>
+      <div>
+        <h4>02 &middot; Ten features beat fifty-seven</h4>
+        <p>Selecting the top 10 features by importance &mdash; led by OBV, the lower Bollinger band and ADX &mdash; trained roughly 2.9&times; faster than the full set and matched or beat its directional accuracy on 4 of 6 tickers.</p>
+      </div>
+      <div>
+        <h4>03 &middot; Efficiency picked the winner</h4>
+        <p>LightGBM and XGBoost reached near-identical validation scores after tuning, but LightGBM's 100-iteration hyperparameter search ran in 34s against XGBoost's 1152s &mdash; decisive once daily refitting was the plan.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Methods</h2>
+    <h3>Five models, two feature sets, one leakage-safe harness</h3>
+    <p class="lead">Ridge established a baseline on raw OHLCV data; ElasticNet, Random Forest, XGBoost and LightGBM were then compared against it and each other, first with default hyperparameters and then after an extensive 100-iteration <code>RandomizedSearchCV</code> per model. Sequence models (LSTM, Transformers) were ruled out up front on time and complexity grounds. All training and evaluation ran through a custom expanding-window, leakage-safe harness (<code>mltester.py</code>) built specifically to guard against the lookahead bias and overfitting that plague financial time-series ML.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">10 features</span><div class="bar-track"><div class="bar-fill" style="width:34.2%"></div></div><span class="count">16.0s</span></div>
+      <div class="bar-row"><span class="name">57 features</span><div class="bar-track"><div class="bar-fill alt" style="width:100%"></div></div><span class="count">46.8s</span></div>
+      <p class="caption">mean training time per ticker, LightGBM &middot; averaged across all 6 ETFs</p>
+    </div>
+
+    <p class="close">Feature selection trimmed 57 candidates to the 10 most important (by split-gain importance) after confirming that a 5&ndash;20 feature range performed best in a sweep &mdash; fewer features meant materially faster training with no consistent loss of accuracy, and a lower over-fitting risk. Hyperparameters were tuned once with an extensive randomised search, then fixed for fast retraining, which is what made the daily-refit results above practical to compute at all. The honest caveats: directional accuracy across all six tickers, even for the winning model, tops out in the low-to-mid 60s% &mdash; this is financial return prediction with a genuinely low signal:noise ratio; performance also degrades noticeably in higher-volatility periods such as the early 2020s; and feature engineering that helps LightGBM can actively hurt a linear model, so none of these conclusions transfer automatically to a different model family.</p>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Data</h2>
+    <h3>Six sector ETFs, fifteen years, fifty-seven candidate features</h3>
+    <p class="lead">22,638 daily OHLCV rows across six industry-sector ETFs &mdash; XLE (Energy), XLF (Financials), XLI (Industrials), XLK (Technology), XLP (Consumer Staples), XLV (Healthcare) &mdash; from January 2010 to December 2024, roughly 3,773 trading days per ticker. From raw prices, 57 candidate features were engineered across volume (OBV, AD, rolling volume), volatility (NATR, Bollinger Bands), trend (smoothed moving averages) and momentum (MACD signal, ADX) categories, then ranked by importance.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">obv</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">7.6%</span></div>
+      <div class="bar-row"><span class="name">bbands_lower</span><div class="bar-track"><div class="bar-fill" style="width:84.2%"></div></div><span class="count">6.4%</span></div>
+      <div class="bar-row"><span class="name">adx</span><div class="bar-track"><div class="bar-fill" style="width:79.8%"></div></div><span class="count">6.1%</span></div>
+      <div class="bar-row"><span class="name">vol_30</span><div class="bar-track"><div class="bar-fill" style="width:73.4%"></div></div><span class="count">5.6%</span></div>
+      <div class="bar-row"><span class="name">macdsignal</span><div class="bar-track"><div class="bar-fill" style="width:71.2%"></div></div><span class="count">5.4%</span></div>
+      <div class="bar-row"><span class="name">bbands_upper</span><div class="bar-track"><div class="bar-fill" style="width:70.5%"></div></div><span class="count">5.4%</span></div>
+      <div class="bar-row"><span class="name">sma_dist_200</span><div class="bar-track"><div class="bar-fill" style="width:66.9%"></div></div><span class="count">5.1%</span></div>
+      <div class="bar-row"><span class="name">ad</span><div class="bar-track"><div class="bar-fill" style="width:61.9%"></div></div><span class="count">4.7%</span></div>
+      <div class="bar-row"><span class="name">sma_dist_50</span><div class="bar-track"><div class="bar-fill" style="width:60.5%"></div></div><span class="count">4.6%</span></div>
+      <div class="bar-row"><span class="name">natr</span><div class="bar-track"><div class="bar-fill" style="width:55.4%"></div></div><span class="count">4.2%</span></div>
+      <p class="caption">relative importance, top 10 of 57 engineered features &middot; LightGBM, full feature set fit &middot; % of total split-gain importance</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    <a class="cta" href="https://github.com/cbrown564-alt/qub-msc-ai/blob/main/semester-1/machine-learning/cw1-etf-return-prediction/ECS8051_CW1_40466218.ipynb">Open the full notebook &rarr;</a>
+  </div>
+  <span class="fine">Full hyperparameter search, feature-count sweep, and per-regime breakdowns are in the notebook. Part 2 uses these same six ETFs to detect market regimes via unsupervised clustering, then feeds them back into this exact model as new features &mdash; <a href="../cw2-market-regime-detection/case-study.html">see it here</a>.</span>
+</footer>
+
+</body>
+</html>

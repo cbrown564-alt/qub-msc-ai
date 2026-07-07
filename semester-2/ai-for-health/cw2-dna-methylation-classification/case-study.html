@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Classifying Medulloblastoma by DNA Methylation — Case Study</title>
+<meta name="description" content="An SVM trained on 16 NMF-derived methylation features separates eight molecular subtypes of medulloblastoma, beating a published 2024 benchmark on two array platforms.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --blue: #2f5f7d;
+    --err: #9c3b26;
+    --err-soft: rgba(156,59,38,0.13);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  a{ color: var(--amber); text-decoration-color: rgba(156,97,30,0.4); text-underline-offset: 3px; }
+  a:hover{ text-decoration-color: var(--amber); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow a{ color: var(--muted); }
+
+  /* section 1: findings */
+  .findings{
+    position: relative;
+    padding: 4.2rem 1.5rem 3.5rem;
+    background-image: radial-gradient(circle at 1px 1px, rgba(20,22,25,0.07) 1px, transparent 0);
+    background-size: 26px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1{
+    font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+    line-height: 1.14;
+    font-weight: 400;
+    margin: 0 0 1.3rem;
+    max-width: 19ch;
+  }
+  h1 em{ font-style: italic; color: var(--amber); }
+
+  .thesis{
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--ink-dim);
+    max-width: 60ch;
+    margin: 0 0 2.4rem;
+  }
+  .thesis strong{ color: var(--ink); font-weight: 600; }
+
+  .stat-rail{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2.6rem;
+  }
+  .stat{ background: var(--panel); padding: 1.2rem 1.3rem; }
+  .stat .num{
+    font-family: var(--font-mono);
+    font-size: clamp(1.4rem, 2.8vw, 1.9rem);
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat .lbl{ font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .stat .lbl b{ color: var(--ink-dim); font-weight: 600; }
+
+  /* illustration components (one per section) */
+  .illustration{ margin: 0 auto 2.4rem; }
+  .cm-scroll{ overflow-x: auto; padding-bottom: 2px; }
+  table.cm{
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    margin: 0 auto;
+    background: var(--panel);
+  }
+  table.cm th, table.cm td{
+    width: 40px; height: 32px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  table.cm th{ font-weight: 400; color: var(--muted); font-size: 0.66rem; }
+  table.cm th.corner{ border: none; }
+  table.cm th.rowhead{ text-align: right; padding-right: 0.6rem; white-space: nowrap; border: none; }
+  table.cm td.diag{ background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  table.cm td.err{ background: var(--err-soft); color: var(--err); font-weight: 600; }
+  table.cm td.zero{ color: rgba(23,25,29,0.16); }
+
+  .caption{
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.9rem 0 0;
+  }
+
+  .findings-list{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin-top: 0.6rem;
+  }
+  .findings-list div h4{
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+  }
+  .findings-list div p{ font-size: 0.94rem; margin: 0; color: var(--ink-dim); }
+
+  /* sections 2 & 3 */
+  section.body{ padding: 3.6rem 1.5rem; }
+  section.body + section.body{ border-top: 1px solid var(--line); }
+  section.body h2{
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    font-weight: 500;
+    margin: 0 0 0.4rem;
+  }
+  section.body h3{
+    font-family: var(--font-serif);
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 1.2rem;
+  }
+  section.body p{ color: var(--ink-dim); max-width: 66ch; }
+  section.body p.lead{ color: var(--ink); font-size: 1.04rem; max-width: 64ch; }
+  section.body p.close{ font-size: 0.94rem; max-width: 66ch; margin-top: 2rem; }
+  code{ font-family: var(--font-mono); color: var(--ink); background: var(--amber-soft); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+
+  .iter-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .iter-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .iter-labels{ display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .bar-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .bar-row{ display: grid; grid-template-columns: 84px 1fr 46px; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+  .bar-row .name{ color: var(--muted); text-align: right; }
+  .bar-track{ background: var(--line); border-radius: 3px; height: 9px; overflow: hidden; }
+  .bar-fill{ height: 100%; background: var(--amber); border-radius: 3px; }
+  .bar-row .count{ color: var(--ink-dim); }
+
+  footer{
+    padding: 2.8rem 1.5rem 3.6rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem;
+    align-items: center; justify-content: space-between;
+  }
+  .cta{
+    font-family: var(--font-mono); font-size: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.7rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta:hover{ border-color: var(--amber); color: var(--amber); }
+  .fine{ font-size: 0.8rem; color: var(--muted); max-width: 46ch; }
+
+  @media (max-width: 760px){
+    .findings-list{ grid-template-columns: 1fr; gap: 1.4rem; }
+    .stat-rail{ grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<section class="findings">
+  <div class="wrap">
+    <p class="eyebrow"><a href="../../../README.md">MSc AI, Queen's University Belfast</a> · ECS8055 AI for Health · Coursework 2 of 2</p>
+    <h1>Eight brain-tumour subtypes, <em>one methylation array</em>, and six mistakes out of 274</h1>
+    <p class="thesis">A support vector classifier trained on sixteen NMF-derived methylation features separated eight molecular subtypes of medulloblastoma &mdash; a childhood brain cancer &mdash; well enough to <strong>beat a 2024 published benchmark</strong>, on both the array it was trained on and a newer one it never saw.</p>
+
+    <div class="stat-rail">
+      <div class="stat">
+        <span class="num">0.97</span>
+        <span class="lbl">macro-F1 on the <b>HM450</b> test set &mdash; vs. 0.94 published (Abid &amp; Rafiee, 2024)</span>
+      </div>
+      <div class="stat">
+        <span class="num">0.94</span>
+        <span class="lbl">macro-F1 on <b>97 EPIC-array</b> samples, a platform never used in training &mdash; vs. 0.93 published</span>
+      </div>
+      <div class="stat">
+        <span class="num">6 / 274</span>
+        <span class="lbl">test samples misclassified, <b>every one</b> below 70% model confidence</span>
+      </div>
+    </div>
+
+    <div class="illustration">
+      <div class="cm-scroll">
+        <table class="cm" aria-label="Confusion matrix, HM450 test set">
+          <tr>
+            <th class="corner"></th>
+            <th colspan="8" style="font-weight:400;color:var(--muted);border:none;padding-bottom:0.35rem;">predicted &rarr;</th>
+          </tr>
+          <tr>
+            <th class="corner"></th>
+            <th>WNT</th><th>SHH-A</th><th>SHH-B</th><th>SHH-C</th><th>Gr3-A</th><th>Gr3-B</th><th>Gr4-A</th><th>Gr4-B</th>
+          </tr>
+          <tr><th class="rowhead">WNT</th><td class="diag">10</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td></tr>
+          <tr><th class="rowhead">SHH-A</th><td class="zero">0</td><td class="diag">34</td><td class="err">1</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td></tr>
+          <tr><th class="rowhead">SHH-B</th><td class="zero">0</td><td class="zero">0</td><td class="diag">25</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td></tr>
+          <tr><th class="rowhead">SHH-C</th><td class="zero">0</td><td class="err">1</td><td class="err">1</td><td class="diag">25</td><td class="zero">0</td><td class="zero">0</td><td class="err">1</td><td class="zero">0</td></tr>
+          <tr><th class="rowhead">Gr3-A</th><td class="zero">0</td><td class="zero">0</td><td class="err">1</td><td class="zero">0</td><td class="diag">21</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td></tr>
+          <tr><th class="rowhead">Gr3-B</th><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="diag">24</td><td class="zero">0</td><td class="zero">0</td></tr>
+          <tr><th class="rowhead">Gr4-A</th><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="diag">61</td><td class="zero">0</td></tr>
+          <tr><th class="rowhead">Gr4-B</th><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="zero">0</td><td class="err">1</td><td class="zero">0</td><td class="diag">68</td></tr>
+        </table>
+      </div>
+      <p class="caption">Final optimised SVC &middot; HM450 test set, n=274 &middot; rows = true subtype, columns = predicted &middot; Gr3/Gr4 = Group 3 / Group 4</p>
+    </div>
+
+    <div class="findings-list">
+      <div>
+        <h4>01 &middot; Margins beat neighbours</h4>
+        <p>SVC beat a KNN comparator on identical features. The boundary between subtypes &mdash; especially Group&nbsp;3/4 &mdash; is smooth and non-linear, and needs a margin-based model rather than nearest-neighbour voting.</p>
+      </div>
+      <div>
+        <h4>02 &middot; Weighting mattered most</h4>
+        <p>WNT is 51 of 1,370 samples. <code>class_weight='balanced'</code> &mdash; a 3.4&times; heavier penalty on WNT errors &mdash; lifted macro-F1 more than any kernel or hyperparameter change that followed.</p>
+      </div>
+      <div>
+        <h4>03 &middot; It held up on new hardware</h4>
+        <p>Projected onto 97 samples run on a newer EPIC array, never seen in training or tuning, the model lost only 0.03 of macro-F1.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Methods</h2>
+    <h3>Margin-based, weighted for imbalance, tuned in five steps</h3>
+    <p class="lead">SVC was chosen over KNN, decision trees, and logistic regression because the subtype boundaries in NMF space are smooth and non-linear rather than governed by simple proximity or trees' axis-aligned splits &mdash; and the approach is validated on this exact HM450/EPIC pipeline by Abid &amp; Rafiee (2024, weighted F1 0.95, polynomial kernel). KNN served only as a check: had it matched SVC, the subtypes would have been trivially separable by proximity alone. It didn't.</p>
+
+    <div class="illustration iter-chart">
+      <svg viewBox="0 0 520 170" preserveAspectRatio="xMinYMid meet">
+        <line x1="34" y1="14" x2="34" y2="130" stroke="rgba(20,22,25,0.16)" stroke-width="1"/>
+        <line x1="34" y1="130" x2="500" y2="130" stroke="rgba(20,22,25,0.16)" stroke-width="1"/>
+        <text x="26" y="18" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="end">.98</text>
+        <text x="26" y="75" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="end">.94</text>
+        <text x="26" y="132" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="end">.90</text>
+        <polyline points="60,96 165,60 270,20 375,17 480,14" fill="none" stroke="rgba(156,97,30,0.22)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+        <polyline points="60,96 165,60 270,20 375,17 480,14" fill="none" stroke="#9c611e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="60" cy="96" r="4" fill="#9c611e"/>
+        <circle cx="165" cy="60" r="4" fill="#9c611e"/>
+        <circle cx="270" cy="20" r="4" fill="#9c611e"/>
+        <circle cx="375" cy="17" r="4" fill="#9c611e"/>
+        <circle cx="480" cy="14" r="4" fill="#9c611e"/>
+        <text x="60" y="150" fill="#43464d" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">1</text>
+        <text x="165" y="150" fill="#43464d" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">2</text>
+        <text x="270" y="150" fill="#43464d" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">3</text>
+        <text x="375" y="150" fill="#43464d" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">4</text>
+        <text x="480" y="150" fill="#43464d" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">5</text>
+      </svg>
+      <div class="iter-labels">
+        <span>#1 wide grid</span><span>#2 balanced weights</span><span>#3 poly tuned</span><span>#4 &rarr; RBF</span><span>#5 RBF tuned</span>
+      </div>
+      <p class="caption">cross-validated macro-F1 across 5 refinement iterations</p>
+    </div>
+
+    <p class="close">All six HM450 errors were low-confidence &mdash; under 70% certainty, with the correct subtype as runner-up &mdash; and three of six confuse neighbouring SHH variants, consistent with known intragroup heterogeneity rather than model failure. The clearest caveat: the 16 NMF features were fit on all 1,370 samples before this train/test split, so test performance isn't fully independent of training data; a stricter pipeline would fit NMF on the training set alone. WNT also remains thin at around four samples per fold under 10-fold CV, so its share of a very clean topline number rests on a noisy estimate.</p>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Data</h2>
+    <h3>Eight subtypes, badly imbalanced</h3>
+    <p class="lead">1,370 medulloblastoma samples, each reduced from raw HM450 methylation beta-values to 16 NMF metagene features in Part 1 of this coursework. The eight consensus molecular subtypes are nowhere near evenly sized.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">WNT</span><div class="bar-track"><div class="bar-fill" style="width:14.7%"></div></div><span class="count">51</span></div>
+      <div class="bar-row"><span class="name">SHH-A</span><div class="bar-track"><div class="bar-fill" style="width:51.0%"></div></div><span class="count">177</span></div>
+      <div class="bar-row"><span class="name">SHH-B</span><div class="bar-track"><div class="bar-fill" style="width:35.7%"></div></div><span class="count">124</span></div>
+      <div class="bar-row"><span class="name">SHH-C</span><div class="bar-track"><div class="bar-fill" style="width:40.3%"></div></div><span class="count">140</span></div>
+      <div class="bar-row"><span class="name">Group3-A</span><div class="bar-track"><div class="bar-fill" style="width:30.8%"></div></div><span class="count">107</span></div>
+      <div class="bar-row"><span class="name">Group3-B</span><div class="bar-track"><div class="bar-fill" style="width:34.6%"></div></div><span class="count">120</span></div>
+      <div class="bar-row"><span class="name">Group4-A</span><div class="bar-track"><div class="bar-fill" style="width:87.6%"></div></div><span class="count">304</span></div>
+      <div class="bar-row"><span class="name">Group4-B</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">347</span></div>
+      <p class="caption">samples per subtype, n=1,370 &middot; an 80/20 stratified split (1,096 train / 274 test) preserves this ratio in both sets</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    <a class="cta" href="https://github.com/cbrown564-alt/qub-msc-ai/blob/main/semester-2/ai-for-health/cw2-dna-methylation-classification/40466218_Conor_Brown_ECS8055_ICW_170426.ipynb">Open the full notebook &rarr;</a>
+  </div>
+  <span class="fine">Grid search heatmaps, learning/validation curves, and the full per-sample error table are in the notebook. Part 1 covers the IDAT preprocessing and NMF pipeline these features come from &mdash; <a href="../cw1-dna-methylation-classification/case-study.html">see it here</a>.</span>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detecting Market Regimes with Gaussian Mixture Models — Case Study</title>
+<meta name="description" content="A Gaussian Mixture Model splits 26 years of ETF data into three regimes without seeing a single labelled crisis date — and its Panic regime maps exclusively onto the 2008 and 2020 crashes.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --blue: #2f5f7d;
+    --err: #9c3b26;
+    --err-soft: rgba(156,59,38,0.13);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  a{ color: var(--amber); text-decoration-color: rgba(156,97,30,0.4); text-underline-offset: 3px; }
+  a:hover{ text-decoration-color: var(--amber); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow a{ color: var(--muted); }
+
+  /* section 1: findings */
+  .findings{
+    position: relative;
+    padding: 4.2rem 1.5rem 3.5rem;
+    background-image: radial-gradient(circle at 1px 1px, rgba(20,22,25,0.07) 1px, transparent 0);
+    background-size: 26px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1{
+    font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+    line-height: 1.14;
+    font-weight: 400;
+    margin: 0 0 1.3rem;
+    max-width: 19ch;
+  }
+  h1 em{ font-style: italic; color: var(--amber); }
+
+  .thesis{
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--ink-dim);
+    max-width: 60ch;
+    margin: 0 0 2.4rem;
+  }
+  .thesis strong{ color: var(--ink); font-weight: 600; }
+
+  .stat-rail{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2.6rem;
+  }
+  .stat{ background: var(--panel); padding: 1.2rem 1.3rem; }
+  .stat .num{
+    font-family: var(--font-mono);
+    font-size: clamp(1.4rem, 2.8vw, 1.9rem);
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat .lbl{ font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .stat .lbl b{ color: var(--ink-dim); font-weight: 600; }
+
+  /* illustration components (one per section) */
+  .illustration{ margin: 0 auto 2.4rem; }
+  .cm-scroll{ overflow-x: auto; padding-bottom: 2px; }
+  table.cm{
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    margin: 0 auto;
+    background: var(--panel);
+  }
+  table.cm th, table.cm td{
+    width: 40px; height: 32px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  table.cm th{ font-weight: 400; color: var(--muted); font-size: 0.66rem; }
+  table.cm th.corner{ border: none; }
+  table.cm th.rowhead{ text-align: right; padding-right: 0.6rem; white-space: nowrap; border: none; }
+  table.cm td.diag{ background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  table.cm td.err{ background: var(--err-soft); color: var(--err); font-weight: 600; }
+  table.cm td.zero{ color: rgba(23,25,29,0.16); }
+
+  .caption{
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.9rem 0 0;
+  }
+
+  .findings-list{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin-top: 0.6rem;
+  }
+  .findings-list div h4{
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+  }
+  .findings-list div p{ font-size: 0.94rem; margin: 0; color: var(--ink-dim); }
+
+  /* sections 2 & 3 */
+  section.body{ padding: 3.6rem 1.5rem; }
+  section.body + section.body{ border-top: 1px solid var(--line); }
+  section.body h2{
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    font-weight: 500;
+    margin: 0 0 0.4rem;
+  }
+  section.body h3{
+    font-family: var(--font-serif);
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 1.2rem;
+  }
+  section.body p{ color: var(--ink-dim); max-width: 66ch; }
+  section.body p.lead{ color: var(--ink); font-size: 1.04rem; max-width: 64ch; }
+  section.body p.close{ font-size: 0.94rem; max-width: 66ch; margin-top: 2rem; }
+  code{ font-family: var(--font-mono); color: var(--ink); background: var(--amber-soft); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+
+  .iter-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .iter-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .iter-labels{ display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .bar-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .bar-row{ display: grid; grid-template-columns: 84px 1fr 46px; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+  .bar-row .name{ color: var(--muted); text-align: right; }
+  .bar-track{ background: var(--line); border-radius: 3px; height: 9px; overflow: hidden; }
+  .bar-fill{ height: 100%; background: var(--amber); border-radius: 3px; }
+  .bar-fill.stable{ background: var(--blue); }
+  .bar-fill.panic{ background: var(--err); }
+  .bar-row .count{ color: var(--ink-dim); }
+
+  /* new: regime timeline strip */
+  .timeline{ max-width: 660px; margin: 1.8rem auto 0; }
+  .timeline svg{ width: 100%; height: auto; overflow: visible; }
+  .timeline-legend{ display: flex; gap: 1.4rem; justify-content: center; margin-top: 0.8rem; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); }
+  .timeline-legend span{ display: inline-flex; align-items: center; gap: 0.4rem; }
+  .timeline-legend i{ width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  footer{
+    padding: 2.8rem 1.5rem 3.6rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem;
+    align-items: center; justify-content: space-between;
+  }
+  .cta{
+    font-family: var(--font-mono); font-size: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.7rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta:hover{ border-color: var(--amber); color: var(--amber); }
+  .fine{ font-size: 0.8rem; color: var(--muted); max-width: 46ch; }
+
+  @media (max-width: 760px){
+    .findings-list{ grid-template-columns: 1fr; gap: 1.4rem; }
+    .stat-rail{ grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<section class="findings">
+  <div class="wrap">
+    <p class="eyebrow"><a href="../../../README.md">MSc AI, Queen's University Belfast</a> · ECS8051 Machine Learning · Coursework 2 of 2</p>
+    <h1>An unsupervised model splits 26 years of markets into <em>three moods</em> &mdash; and tells a slow crash from a sudden one</h1>
+    <p class="thesis">A Gaussian Mixture Model, given only rolling volatility and a market-synchronisation signal for six sector ETFs since 1999, clustered the market into three regimes without ever seeing a labelled crisis date. It separates the fast, violent panics of 2008 and 2020 from the slower, lower-intensity 2000 dot-com correction &mdash; and the regimes it finds turn out to have Sharpe ratios <strong>a full point apart</strong>.</p>
+
+    <div class="stat-rail">
+      <div class="stat">
+        <span class="num">3</span>
+        <span class="lbl">regimes recovered unsupervised &mdash; <b>Stable, Correction, Panic</b> &mdash; from just 2 features across 26 years, 6 ETFs</span>
+      </div>
+      <div class="stat">
+        <span class="num">0.75 &rarr; &minus;0.28</span>
+        <span class="lbl">Sharpe ratio from <b>Stable</b> to <b>Panic</b> regime &mdash; statistically distinct clusters that are also financially distinct</span>
+      </div>
+      <div class="stat">
+        <span class="num">115 / 6,748</span>
+        <span class="lbl">trading days (1.7%) classified <b>Panic</b> &mdash; exclusively the 2008 crisis and the 2020 covid crash</span>
+      </div>
+    </div>
+
+    <div class="illustration timeline">
+      <svg viewBox="0 0 640 92" preserveAspectRatio="xMinYMid meet">
+        <!-- base timeline: Stable -->
+        <rect x="10" y="30" width="620" height="24" rx="3" fill="var(--blue)" opacity="0.22"/>
+        <!-- dot-com: Correction, 2000-03-10 to 2002-10-03 -->
+        <rect x="37" y="30" width="59" height="24" fill="var(--amber)" opacity="0.55"/>
+        <!-- 2008 financial crisis: Panic, 2008-09-07 to 2009-06-15 -->
+        <rect x="232" y="30" width="18" height="24" fill="var(--err)"/>
+        <!-- 2020 covid: Panic, 2020-02-20 to 2020-07-07 -->
+        <rect x="495" y="30" width="9" height="24" fill="var(--err)"/>
+        <line x1="10" y1="60" x2="630" y2="60" stroke="rgba(20,22,25,0.16)" stroke-width="1"/>
+        <text x="33" y="74" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">2000</text>
+        <text x="217" y="74" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">2008</text>
+        <text x="309" y="74" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">2012</text>
+        <text x="400" y="74" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">2016</text>
+        <text x="492" y="74" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">2020</text>
+        <text x="584" y="74" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">2024</text>
+        <text x="66" y="22" fill="#9c611e" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">dot-com correction</text>
+        <text x="241" y="22" fill="#9c3b26" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">2008 panic</text>
+        <text x="499" y="22" fill="#9c3b26" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">2020 panic</text>
+      </svg>
+      <div class="timeline-legend">
+        <span><i style="background:var(--blue); opacity:0.55"></i>Stable</span>
+        <span><i style="background:var(--amber); opacity:0.85"></i>Correction</span>
+        <span><i style="background:var(--err)"></i>Panic</span>
+      </div>
+      <p class="caption">detected regime over manually-dated crisis windows, 1999&ndash;2025 &middot; panic bands widened slightly for visibility</p>
+    </div>
+
+    <div class="findings-list">
+      <div>
+        <h4>01 &middot; The panic label is precise</h4>
+        <p>Panic days map exclusively onto the 2008 financial crisis and 2020 covid crash (115 of 6,748 days, 1.7%). The 2000 dot-com crash &mdash; lower-intensity, longer-lived &mdash; lands in Correction instead, exactly as its volatility profile suggests it should.</p>
+      </div>
+      <div>
+        <h4>02 &middot; Statistics and judgment disagreed, twice</h4>
+        <p>The metrics preferred dropping market synchronisation entirely (best BIC) and a slower 90-day volatility window (best silhouette). Financial intuition about how fast a panic needs recognising overruled both.</p>
+      </div>
+      <div>
+        <h4>03 &middot; The regimes barely help the forecast they were built for</h4>
+        <p>Fed as one-hot features into the CW1 LightGBM pipeline, they lift directional accuracy by only +0.4pp (50.7% &rarr; 51.1%) &mdash; the model's existing volatility features already captured most of that signal.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Methods</h2>
+    <h3>GMM over K-Means, full covariance over diagonal &mdash; then overruled on its own metrics</h3>
+    <p class="lead">GMM was chosen over K-Means because financial regimes have elliptical, heteroskedastic shapes that a hard-boundary, equal-variance clustering can't represent. A full-covariance GMM confirmed this directly, beating spherical and diagonal covariance on both BIC (55,860 vs. 90,608 / 74,260) and silhouette score (0.38 vs. 0.33 / 0.28) at k=3.</p>
+
+    <div class="illustration iter-chart">
+      <svg viewBox="0 0 520 170" preserveAspectRatio="xMinYMid meet">
+        <line x1="34" y1="14" x2="34" y2="130" stroke="rgba(20,22,25,0.16)" stroke-width="1"/>
+        <line x1="34" y1="130" x2="500" y2="130" stroke="rgba(20,22,25,0.16)" stroke-width="1"/>
+        <text x="26" y="34" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="end">.40</text>
+        <text x="26" y="82" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="end">.34</text>
+        <text x="26" y="130" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="end">.28</text>
+        <!-- windows 7,30,60,90,120,150,180 -> silhouette .28,.38,.38,.40,.38,.35,.35 -->
+        <polyline points="60,130 133,50 207,50 280,34 353,50 427,74 500,74" fill="none" stroke="rgba(156,97,30,0.22)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+        <polyline points="60,130 133,50 207,50 280,34 353,50 427,74 500,74" fill="none" stroke="#9c611e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="60" cy="130" r="4" fill="#9c611e"/>
+        <circle cx="133" cy="50" r="6" fill="#9c611e" stroke="#f7f7f4" stroke-width="2"/>
+        <circle cx="207" cy="50" r="4" fill="#9c611e"/>
+        <circle cx="280" cy="34" r="4" fill="#2f5f7d"/>
+        <circle cx="353" cy="50" r="4" fill="#9c611e"/>
+        <circle cx="427" cy="74" r="4" fill="#9c611e"/>
+        <circle cx="500" cy="74" r="4" fill="#9c611e"/>
+        <text x="133" y="150" fill="#43464d" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">30d (chosen)</text>
+        <text x="280" y="150" fill="#2f5f7d" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">90d (best score)</text>
+      </svg>
+      <div class="iter-labels">
+        <span>7d</span><span>30d</span><span>60d</span><span>90d</span><span>120d</span><span>150d</span><span>180d</span>
+      </div>
+      <p class="caption">silhouette score vs. rolling-volatility window width &middot; 30 days chosen for responsiveness over the 90-day statistical optimum</p>
+    </div>
+
+    <p class="close">Neither BIC nor silhouette score actually endorses the final configuration. BIC kept improving all the way out to a 180-day window and to excluding market synchronisation altogether (its single best setting scored 39,129 vs. the chosen setup's 55,860), while silhouette peaked at a 90-day window (0.40) and even preferred k=2 outright (0.42) over k=3's 0.38. The 30-day window, the inclusion of market synchronisation, and k=3 were all chosen against the numbers, on financial-judgment grounds: a regime detector that takes 90 days to notice a shift is too slow for a crisis that unfolds in weeks, and 2 regimes can't distinguish a sector correction from a market-wide panic. That's a legitimate but subjective call, and it means the headline regime boundaries reflect domain reasoning as much as any single optimised metric &mdash; a point the notebook itself is explicit about.</p>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Data</h2>
+    <h3>Mostly calm, rarely correcting, almost never panicking</h3>
+    <p class="lead">6,778 daily closes for six sector ETFs &mdash; XLE, XLF, XLI, XLK, XLP, XLV &mdash; from January 1999 to December 2025, reduced to two standardised features: 30-day rolling volatility and market synchronisation (the top eigenvalue of the 30-day rolling correlation matrix). After the rolling windows are applied, 6,748 usable trading days remain for clustering.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">Stable</span><div class="bar-track"><div class="bar-fill stable" style="width:100%"></div></div><span class="count">4,684</span></div>
+      <div class="bar-row"><span class="name">Correction</span><div class="bar-track"><div class="bar-fill" style="width:41.6%"></div></div><span class="count">1,949</span></div>
+      <div class="bar-row"><span class="name">Panic</span><div class="bar-track"><div class="bar-fill panic" style="width:2.5%"></div></div><span class="count">115</span></div>
+      <p class="caption">days per regime, n=6,748 &middot; Stable 69.4% &middot; Correction 28.9% &middot; Panic 1.7%</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    <a class="cta" href="https://github.com/cbrown564-alt/qub-msc-ai/blob/main/semester-1/machine-learning/cw2-market-regime-detection/ECS8051_CW2_40466218.ipynb">Open the full notebook &rarr;</a>
+  </div>
+  <span class="fine">The window-sensitivity sweep, transition matrix, and Greedy Gaussian Segmentation baseline comparison are in the notebook. Part 1 builds the walk-forward LightGBM model these regimes are fed back into &mdash; <a href="../cw1-etf-return-prediction/case-study.html">see it here</a>.</span>
+</footer>
+
+</body>
+</html>
