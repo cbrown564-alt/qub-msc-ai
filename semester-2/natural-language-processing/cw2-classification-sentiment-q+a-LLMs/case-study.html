@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Classification, Sentiment Analysis &amp; Q&amp;A with LLMs — Case Study</title>
+<meta name="description" content="Four encoder architectures — Word2Vec, BERT, ModernBERT, RoBERTa/DistilBERT — applied to a 602-story LLM-generated corpus for classification, zero-shot sentiment analysis, and extractive Q&A. The smaller model generalised better, and fine-tuning transformed Q&A performance everywhere except the hardest writing style.">
+<style>
+  :root{
+    --bg: #f7f7f4;
+    --panel: #ffffff;
+    --line: rgba(20,22,25,0.11);
+    --line-strong: rgba(20,22,25,0.22);
+    --ink: #17191d;
+    --ink-dim: #43464d;
+    --muted: #82868f;
+    --amber: #9c611e;
+    --amber-soft: rgba(156,97,30,0.12);
+    --blue: #2f5f7d;
+    --err: #9c3b26;
+    --err-soft: rgba(156,59,38,0.13);
+    --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  a{ color: var(--amber); text-decoration-color: rgba(156,97,30,0.4); text-underline-offset: 3px; }
+  a:hover{ text-decoration-color: var(--amber); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow a{ color: var(--muted); }
+
+  /* section 1: findings */
+  .findings{
+    position: relative;
+    padding: 4.2rem 1.5rem 3.5rem;
+    background-image: radial-gradient(circle at 1px 1px, rgba(20,22,25,0.07) 1px, transparent 0);
+    background-size: 26px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1{
+    font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+    line-height: 1.14;
+    font-weight: 400;
+    margin: 0 0 1.3rem;
+    max-width: 19ch;
+  }
+  h1 em{ font-style: italic; color: var(--amber); }
+
+  .thesis{
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--ink-dim);
+    max-width: 60ch;
+    margin: 0 0 2.4rem;
+  }
+  .thesis strong{ color: var(--ink); font-weight: 600; }
+
+  .stat-rail{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2.6rem;
+  }
+  .stat{ background: var(--panel); padding: 1.2rem 1.3rem; }
+  .stat .num{
+    font-family: var(--font-mono);
+    font-size: clamp(1.3rem, 2.6vw, 1.7rem);
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat .lbl{ font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .stat .lbl b{ color: var(--ink-dim); font-weight: 600; }
+
+  /* illustration components (one per section) */
+  .illustration{ margin: 0 auto 2.4rem; }
+  .cm-scroll{ overflow-x: auto; padding-bottom: 2px; }
+  table.cm{
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    margin: 0 auto;
+    background: var(--panel);
+  }
+  table.cm th, table.cm td{
+    width: 40px; height: 32px;
+    text-align: center; vertical-align: middle;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+  }
+  table.cm th{ font-weight: 400; color: var(--muted); font-size: 0.66rem; }
+  table.cm th.corner{ border: none; }
+  table.cm th.rowhead{ text-align: right; padding-right: 0.6rem; white-space: nowrap; border: none; }
+  table.cm td.diag{ background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  table.cm td.err{ background: var(--err-soft); color: var(--err); font-weight: 600; }
+  table.cm td.zero{ color: rgba(23,25,29,0.16); }
+
+  .caption{
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.9rem 0 0;
+  }
+
+  .findings-list{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin-top: 0.6rem;
+  }
+  .findings-list div h4{
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    font-weight: 600;
+  }
+  .findings-list div p{ font-size: 0.94rem; margin: 0; color: var(--ink-dim); }
+
+  /* sections 2 & 3 */
+  section.body{ padding: 3.6rem 1.5rem; }
+  section.body + section.body{ border-top: 1px solid var(--line); }
+  section.body h2{
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    font-weight: 500;
+    margin: 0 0 0.4rem;
+  }
+  section.body h3{
+    font-family: var(--font-serif);
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 1.2rem;
+  }
+  section.body p{ color: var(--ink-dim); max-width: 66ch; }
+  section.body p.lead{ color: var(--ink); font-size: 1.04rem; max-width: 64ch; }
+  section.body p.close{ font-size: 0.94rem; max-width: 66ch; margin-top: 2rem; }
+  code{ font-family: var(--font-mono); color: var(--ink); background: var(--amber-soft); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+
+  .iter-chart{ margin: 1.8rem auto 0; max-width: 520px; }
+  .iter-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .iter-labels{ display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .bar-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .bar-row{ display: grid; grid-template-columns: 84px 1fr 46px; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+  .bar-row .name{ color: var(--muted); text-align: right; }
+  .bar-track{ background: var(--line); border-radius: 3px; height: 9px; overflow: hidden; }
+  .bar-fill{ height: 100%; background: var(--amber); border-radius: 3px; }
+  .bar-fill.blue{ background: var(--blue); }
+  .bar-row .count{ color: var(--ink-dim); }
+
+  /* gap (dumbbell) chart — validation vs test accuracy */
+  .gap-chart{ margin: 1.8rem auto 0; max-width: 560px; }
+  .gap-chart svg{ width: 100%; height: auto; overflow: visible; }
+  .legend{ display: flex; justify-content: center; gap: 1.6rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); margin-top: 0.6rem; }
+  .legend span{ display: inline-flex; align-items: center; gap: 0.4rem; }
+  .legend .dot{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .legend .dot.blue{ background: var(--blue); }
+  .legend .dot.amber{ background: var(--amber); }
+
+  /* qa before/after chart */
+  .qa-chart{ max-width: 480px; margin: 1.8rem auto 0; }
+  .qa-group{ margin-bottom: 1.1rem; }
+  .qa-group:last-child{ margin-bottom: 0; }
+  .qa-title{ font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink); margin-bottom: 0.45rem; font-weight: 600; }
+  .bar-row.qa{ grid-template-columns: 74px 1fr 40px; margin-bottom: 0.35rem; }
+  .bar-row.qa .name{ font-size: 0.7rem; }
+
+  footer{
+    padding: 2.8rem 1.5rem 3.6rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 1rem 2rem;
+    align-items: center; justify-content: space-between;
+  }
+  .cta{
+    font-family: var(--font-mono); font-size: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.7rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta:hover{ border-color: var(--amber); color: var(--amber); }
+  .fine{ font-size: 0.8rem; color: var(--muted); max-width: 46ch; }
+
+  @media (max-width: 760px){
+    .findings-list{ grid-template-columns: 1fr; gap: 1.4rem; }
+    .stat-rail{ grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<section class="findings">
+  <div class="wrap">
+    <p class="eyebrow"><a href="../../../README.md">MSc AI, Queen's University Belfast</a> · ECS8054 Natural Language Processing · Coursework 2 of 2</p>
+    <h1>The bigger transformer <em>memorised</em> the training set &mdash; and still lost</h1>
+    <p class="thesis">Four encoder architectures &mdash; Word2Vec, BERT, ModernBERT, and RoBERTa/DistilBERT &mdash; were applied to the same 602-story corpus from Part 1: fine-tuned country classification, zero-shot sentiment and emotion analysis, and extractive question-answering. The sharpest result wasn't which model won &mdash; it's why the newer, larger one didn't: ModernBERT drove its training loss to <strong>0.0009</strong> and still generalised worse than BERT.</p>
+
+    <div class="stat-rail">
+      <div class="stat">
+        <span class="num">89%</span>
+        <span class="lbl">BERT test accuracy classifying <b>China vs Northern Ireland</b> stories &mdash; ModernBERT 86%, Word2Vec baseline 80%</span>
+      </div>
+      <div class="stat">
+        <span class="num">&minus;9pp</span>
+        <span class="lbl">ModernBERT's validation&rarr;test accuracy drop, vs BERT's <b>&minus;2pp</b> &mdash; despite a training loss of 0.0009 against BERT's 0.37</span>
+      </div>
+      <div class="stat">
+        <span class="num">0.42&rarr;0.96</span>
+        <span class="lbl">Hard-Boiled style QA token-F1, base vs fine-tuned BERT-SQuAD2 &mdash; Descriptive stayed weak at <b>0.29&rarr;0.41</b></span>
+      </div>
+    </div>
+
+    <div class="illustration gap-chart">
+      <svg viewBox="0 0 520 170" preserveAspectRatio="xMinYMid meet">
+        <line x1="60" y1="140" x2="480" y2="140" stroke="rgba(20,22,25,0.16)" stroke-width="1"/>
+        <text x="60" y="158" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">80%</text>
+        <text x="270" y="158" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">90%</text>
+        <text x="480" y="158" fill="#82868f" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">100%</text>
+
+        <text x="8" y="53" fill="#43464d" font-family="ui-monospace, monospace" font-size="12" text-anchor="start">BERT</text>
+        <line x1="249" y1="48" x2="291" y2="48" stroke="rgba(20,22,25,0.3)" stroke-width="2.5"/>
+        <circle cx="291" cy="48" r="5" fill="#2f5f7d"/>
+        <circle cx="249" cy="48" r="5" fill="#9c611e"/>
+        <text x="291" y="35" fill="#2f5f7d" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">91</text>
+        <text x="249" y="35" fill="#9c611e" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">89</text>
+        <text x="500" y="52" fill="#82868f" font-family="ui-monospace, monospace" font-size="11" text-anchor="end">&minus;2pp</text>
+
+        <text x="8" y="115" fill="#43464d" font-family="ui-monospace, monospace" font-size="12" text-anchor="start">ModernBERT</text>
+        <line x1="186" y1="110" x2="375" y2="110" stroke="rgba(20,22,25,0.3)" stroke-width="2.5"/>
+        <circle cx="375" cy="110" r="5" fill="#2f5f7d"/>
+        <circle cx="186" cy="110" r="5" fill="#9c611e"/>
+        <text x="375" y="97" fill="#2f5f7d" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">95</text>
+        <text x="186" y="97" fill="#9c611e" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">86</text>
+        <text x="500" y="114" fill="#82868f" font-family="ui-monospace, monospace" font-size="11" text-anchor="end">&minus;9pp</text>
+      </svg>
+      <div class="legend"><span><i class="dot blue"></i>validation accuracy</span><span><i class="dot amber"></i>test accuracy</span></div>
+      <p class="caption">country classification (n=288) &middot; dumbbell length = generalisation gap, validation &rarr; test</p>
+    </div>
+
+    <div class="findings-list">
+      <div>
+        <h4>01 &middot; Bigger model, worse generalisation</h4>
+        <p>ModernBERT reached a training loss of 0.0009 &mdash; roughly 400&times; lower than BERT's 0.37 &mdash; yet its test accuracy still trailed BERT's 89% at 86%. On 602 stories, more parameters bought overfitting, not accuracy.</p>
+      </div>
+      <div>
+        <h4>02 &middot; Sentiment barely tells themes apart</h4>
+        <p>Zero-shot RoBERTa sentiment was dominated by neutral (61&ndash;65%) across all five themes; only Scientific Discovery stood out as clearly more positive. A same-architecture classifier predicting theme from a story's last sentence scored a Cohen's kappa of just 0.24, against 0.78 for country.</p>
+      </div>
+      <div>
+        <h4>03 &middot; Fine-tuning fixes QA &mdash; except long answers</h4>
+        <p>Fine-tuning BERT-SQuAD2 lifted token-F1 from 0.42 to 0.96 for Hard-Boiled stories and 0.44 to 0.91 for stories written for children. Descriptive stories barely moved, 0.29 to 0.41: F1 falls monotonically as answer length grows, fine-tuned or not.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Methods</h2>
+    <h3>Four architectures, staged from bag-of-words to fine-tuned encoders</h3>
+    <p class="lead">Word2Vec with mean-pooled embeddings and logistic regression served as a non-contextual floor for country classification; BERT and ModernBERT then added an identical <code>[CLS]</code>-token classification head, isolating what a newer, larger, longer-context encoder buys on just 602 stories. ModernBERT needed heavy correction to stay usable &mdash; dropout raised from 0.0 to 0.5, learning rate to 3e-5, and early stopping with patience 3 (triggered at epoch 15) &mdash; and even then its learning curves stayed less stable than BERT's clean 3-epoch run. RoBERTa and DistilBERT were used zero-shot for sentiment and emotion, since no ground-truth labels exist to fine-tune against; BERT-SQuAD2 was instead fine-tuned directly, using Hugging Face's offset-mapping pipeline to align 648 character-level answer spans from three writing styles to sub-word token positions across sliding windows.</p>
+
+    <div class="illustration qa-chart">
+      <div class="qa-group">
+        <div class="qa-title">Hard-Boiled</div>
+        <div class="bar-row qa"><span class="name">0-shot</span><div class="bar-track"><div class="bar-fill blue" style="width:42%"></div></div><span class="count">0.42</span></div>
+        <div class="bar-row qa"><span class="name">fine-tuned</span><div class="bar-track"><div class="bar-fill" style="width:96%"></div></div><span class="count">0.96</span></div>
+      </div>
+      <div class="qa-group">
+        <div class="qa-title">For Children</div>
+        <div class="bar-row qa"><span class="name">0-shot</span><div class="bar-track"><div class="bar-fill blue" style="width:44%"></div></div><span class="count">0.44</span></div>
+        <div class="bar-row qa"><span class="name">fine-tuned</span><div class="bar-track"><div class="bar-fill" style="width:91%"></div></div><span class="count">0.91</span></div>
+      </div>
+      <div class="qa-group">
+        <div class="qa-title">Descriptive</div>
+        <div class="bar-row qa"><span class="name">0-shot</span><div class="bar-track"><div class="bar-fill blue" style="width:29%"></div></div><span class="count">0.29</span></div>
+        <div class="bar-row qa"><span class="name">fine-tuned</span><div class="bar-track"><div class="bar-fill" style="width:41%"></div></div><span class="count">0.41</span></div>
+      </div>
+      <p class="caption">mean token-F1 by writing style, before/after fine-tuning BERT-SQuAD2 on 648 story-derived QA pairs</p>
+    </div>
+
+    <p class="close">The fine-tuned QA numbers carry a stated caveat: they're measured on the same 648 examples used to train the model, so they show what domain fine-tuning can achieve here, not how well it generalises to unseen stories. The zero-shot QA baseline is the fairer generalisation reference, and it shows the same shape &mdash; mean token-F1 fell from 0.50 on answers under 20 characters to 0.25 on answers over 100, before any fine-tuning happened. Classification validation and test sets are thin (22 samples per label for the country task), so BERT's &minus;2pp and ModernBERT's &minus;9pp generalisation gaps, while consistent with the training-loss story, rest on a small test set. Sentiment and emotion scores carry model-specific baseline biases too &mdash; DistilBERT's anger runs high, RoBERTa's joy runs high &mdash; so only within-model, relative comparisons are treated as meaningful, never absolute scores across models.</p>
+  </div>
+</section>
+
+<section class="body">
+  <div class="wrap">
+    <h2>Data</h2>
+    <h3>602 LLM-generated stories, reused whole from Part 1</h3>
+    <p class="lead">The same corpus built in Part 1: 602 short stories, each generated from a template combining theme, setting, protagonist, writing style, country, and two random object concepts. A stratified 70/15/15 train/validation/test split is applied consistently across every task. Two of the corpus's four countries &mdash; China and Northern Ireland &mdash; are almost perfectly balanced at 144 stories each, which is why country, not the five-way theme label, was chosen as the classification target used to compare model architectures head-to-head.</p>
+
+    <div class="illustration bar-chart">
+      <div class="bar-row"><span class="name">USA</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="count">161</span></div>
+      <div class="bar-row"><span class="name">Russia</span><div class="bar-track"><div class="bar-fill" style="width:95.0%"></div></div><span class="count">153</span></div>
+      <div class="bar-row"><span class="name">N. Ireland</span><div class="bar-track"><div class="bar-fill" style="width:89.4%"></div></div><span class="count">144</span></div>
+      <div class="bar-row"><span class="name">China</span><div class="bar-track"><div class="bar-fill" style="width:89.4%"></div></div><span class="count">144</span></div>
+      <p class="caption">stories per country, n=602 &middot; China/N. Ireland's exact balance (144/144) is why they were used for the classification comparison</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    <a class="cta" href="https://github.com/cbrown564-alt/qub-msc-ai/blob/main/semester-2/natural-language-processing/cw2-classification-sentiment-q+a-LLMs/conor_brown_40466218_a2.ipynb">Open the full notebook &rarr;</a>
+  </div>
+  <span class="fine">Model architecture diagrams, full training/validation curves for all three classifiers, and the country-keyword baseline (81% accuracy from 10 substrings) are in the notebook. Part 1 builds the corpus and covers the Zipf's-law, dependency-parsing, phonology, and semantic-similarity analysis these tasks reuse &mdash; <a href="../cw1-llm-linguistic-structure/case-study.html">see it here</a>.</span>
+</footer>
+
+</body>
+</html>
